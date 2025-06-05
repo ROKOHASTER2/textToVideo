@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clean Audio Download</title>
+<script src="https://cdn.jsdelivr.net/npm/mespeak/mespeak.min.js"></script>
+<style>
+    body {
+    font-family: Arial, sans-serif;
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 20px;
+    }
+    textarea {
+    width: 100%;
+    padding: 10px;
+    margin: 10px 0;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    min-height: 100px;
+    }
+    button {
+    background: #0078d7;
+    color: white;
+    padding: 10px 15px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    }
+    button:hover {
+    background: #0066c0;
+    }
+    button:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    }
+    select {
+    width: 100%;
+    padding: 10px;
+    margin: 10px 0;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    }
+</style>
+</head>
+<body>
+<h1>Text to Speech Download</h1>
+<textarea id="text">Enter your text here to convert to speech</textarea>
+<select id="language">
+    <option value="en">English</option>
+    <option value="es">Español</option>
+</select>
+<button id="downloadBtn" onclick="downloadAudio()">Download Audio</button>
+
+<script>
+    // Initialize meSpeak with default voice
+    meSpeak.loadConfig("https://cdn.jsdelivr.net/npm/mespeak/mespeak_config.json");
+    
+    // Load English voice from CDN
+    meSpeak.loadVoice("https://cdn.jsdelivr.net/npm/mespeak/voices/en/en.json");
+    
+    // Spanish voice will be loaded when selected
+    let spanishVoiceLoaded = false;
+
+    async function loadSpanishVoice() {
+        if (!spanishVoiceLoaded) {
+            try {
+                meSpeak.loadVoice('es.json');
+                spanishVoiceLoaded = true;
+            } catch (error) {
+                console.error('Error loading Spanish voice:', error);
+                alert('Error loading Spanish voice. Please make sure es.json is available.');
+                throw error;
+            }
+        }
+    }
+
+    async function downloadAudio() {
+        const btn = document.getElementById('downloadBtn');
+        const text = document.getElementById('text').value.trim();
+        const language = document.getElementById('language').value;
+        
+        if (!text) {
+            alert('Please enter some text first');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Processing...';
+
+        try {
+            // Load Spanish voice if selected and not loaded yet
+            if (language === 'es') {
+                await loadSpanishVoice();
+            }
+
+            // Generate audio with optimal settings
+            const audioData = meSpeak.speak(text, {
+                rawdata: 'arraybuffer',
+                amplitude: 90,
+                wordgap: 1,
+                pitch: 50,
+                speed: 150,
+                variant: language === 'es' ? 'm1' : 'f2'
+            });
+
+            if (!audioData) throw new Error('Failed to generate audio');
+
+            // Create and trigger download
+            const blob = new Blob([audioData], { type: 'audio/wav' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `speech_${language}_${Date.now()}.wav`;
+            document.body.appendChild(a);
+            a.click();
+            
+            // Cleanup
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 100);
+
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error generating audio: ' + error.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Download Audio';
+        }
+    }
+</script>
+</body>
+</html>
