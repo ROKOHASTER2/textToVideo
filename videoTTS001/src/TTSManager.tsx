@@ -1,12 +1,9 @@
-// TTSManager.ts
 declare global {
-  interface Window {
-    meSpeak: any;
-  }
+  interface Window { meSpeak: any; }
 }
 
 const langMap: Record<string, string> = {
-  en: "voices/en/en.json",  // Specific path for English
+  en: "voices/en/en.json",
   es: "voices/es.json",
   fr: "voices/fr.json",
   zh: "voices/zh.json"
@@ -14,9 +11,7 @@ const langMap: Record<string, string> = {
 
 export const loadMeSpeak = (language: string = "en"): Promise<boolean> => {
   return new Promise((resolve) => {
-    // Default to English if language not supported
     const voicePath = langMap[language] || langMap.en;
-    
     const script = document.createElement("script");
     script.src = "https://cdn.jsdelivr.net/npm/mespeak/mespeak.min.js";
     script.async = true;
@@ -33,7 +28,6 @@ export const loadMeSpeak = (language: string = "en"): Promise<boolean> => {
       console.error("Error al cargar mespeak.js");
       resolve(false);
     };
-
     document.body.appendChild(script);
   });
 };
@@ -44,7 +38,6 @@ export const textToSpeech = async (text: string): Promise<string> => {
       console.error("meSpeak no está disponible");
       return resolve("");
     }
-
     try {
       const audioData = window.meSpeak.speak(text, {
         rawdata: "arraybuffer",
@@ -54,15 +47,11 @@ export const textToSpeech = async (text: string): Promise<string> => {
         speed: 150,
         variant: "f2",
       });
-
       if (!audioData) {
         console.error("Error al generar audio");
         return resolve("");
       }
-
-      const blob = new Blob([audioData], { type: "audio/wav" });
-      const url = URL.createObjectURL(blob);
-      resolve(url);
+      resolve(URL.createObjectURL(new Blob([audioData], { type: "audio/wav" })));
     } catch (error) {
       console.error("Error en textToSpeech:", error);
       resolve("");
