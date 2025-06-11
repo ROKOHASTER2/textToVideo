@@ -89,6 +89,19 @@ export class VideoGeneratorLogic {
   async generateAudio(text: string): Promise<string | null> {
     return await textToSpeech(text);
   }
+  async createVideoLINK(imageUrl: string, text: string): Promise<string> {
+  if (!this.meSpeakReady) {
+    throw new Error("TTS engine not initialized. Call initialize() first.");
+  }
+
+  const audioUrl = await this.generateAudio(text);
+  if (!audioUrl) throw new Error("Failed to generate audio from text.");
+
+  const canvas = document.createElement("canvas");
+
+  return await this.createVideoWithAudio(canvas, imageUrl, audioUrl, text);
+}
+
 
   cleanup(urls: string[]) {
     urls.forEach(url => URL.revokeObjectURL(url));
