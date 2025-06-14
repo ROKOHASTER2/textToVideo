@@ -5,11 +5,12 @@ export class VideoGeneratorLogic {
   private mediaRecorder: MediaRecorder | null = null;
   private audioContext: AudioContext | null = null;
 
+  private language = "en";        
   async initialize(language: string = "en") {
+    this.language = language;           // store it
     this.meSpeakReady = await loadMeSpeak(language);
     return this.meSpeakReady;
   }
-
   isMeSpeakReady() {
     return this.meSpeakReady;
   }
@@ -87,14 +88,14 @@ export class VideoGeneratorLogic {
   }
 
   async generateAudio(text: string): Promise<string | null> {
-    return await textToSpeech(text);
-  }
+  return await textToSpeech(text, this.language);
+}
   async createVideoLINK(imageUrl: string, text: string): Promise<string> {
   if (!this.meSpeakReady) {
     throw new Error("TTS engine not initialized. Call initialize() first.");
   }
 
-  const audioUrl = await this.generateAudio(text);
+    const audioUrl = await textToSpeech(text, this.language);
   if (!audioUrl) throw new Error("Failed to generate audio from text.");
 
   const canvas = document.createElement("canvas");

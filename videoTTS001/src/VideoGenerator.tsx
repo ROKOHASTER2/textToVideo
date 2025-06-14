@@ -8,7 +8,7 @@ const VideoGenerator: React.FC = () => {
   const [image, setImage] = useState<string | null>(null);
   const [imageUrlInput, setImageUrlInput] = useState("");
   const [audioUrl, setAudioUrl] = useState("");
-  const [language, setLanguage] = useState("en");
+  const [language, setLanguage] = useState("");
   const [useUrl, setUseUrl] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoGeneratorRef = useRef(new VideoGeneratorLogic());
