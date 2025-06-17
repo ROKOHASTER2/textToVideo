@@ -1,99 +1,147 @@
 import express from 'express';
 import axios from 'axios';
 import tts from 'google-tts-api';
+import { createCanvas, loadImage } from 'canvas';
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegPath from '@ffmpeg-installer/ffmpeg';
+import fs from 'fs';
+import path from 'path';
+import { tmpdir } from 'os';
+import { promisify } from 'util';
+//import cors from 'cors'; para el server de react
+
+// Configurar ffmpeg
+ffmpeg.setFfmpegPath(ffmpegPath.path);
+const readFile = promisify(fs.readFile);
+const unlink = promisify(fs.unlink);
 
 const app = express();
 const port = 3000;
-
+/* Esto es para pruebitas con mi server de react
+app.use(cors({
+  origin: 'http://localhost:5173',
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type']
+}));
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
+const tempDir = tmpdir();
+*/
 // Función para obtener audio como buffer
-async function getAudioBuffer(text, lang = 'es') {
-  try {
-    const url = await tts.getAudioUrl(text, { 
-      lang: lang || 'es', 
-      slow: false 
-    });
-    const response = await axios.get(url, { responseType: 'arraybuffer' });
-    return Buffer.from(response.data);
-  } catch (error) {
-    console.error('Error al obtener el audio:', error);
-    throw error;
-  }
+async function getAudioBuffer(texto, idioma = 'es') {
+  const url = await tts.getAudioUrl(texto, { 
+    lang: idioma || 'es', 
+    slow: false 
+  });
+  const response = await axios.get(url, { responseType: 'arraybuffer' });
+  return Buffer.from(response.data);
 }
 
-// Endpoint para probar el servicio
-app.get('/voz/saludo', async (req, res) => {
-  try {
-    const audioBuffer = await getAudioBuffer('Hola, este es el servicio de texto a voz');
-    res.set('Content-Type', 'audio/mpeg');
-    res.send(audioBuffer);
-  } catch (error) {
-    res.status(500).json({ error: 'Error al generar el saludo de voz' });
-  }
-});
-
-// Endpoint para generar voz con parámetros GET
-app.get('/voz/generar', async (req, res) => {
-  try {
-    const { texto = 'Texto no proporcionado', idioma = 'es' } = req.query;
-    const audioBuffer = await getAudioBuffer(texto, idioma);
-    
-    // Convertir a Blob URL (simulado para el cliente)
-    const base64Audio = audioBuffer.toString('base64');
-    const blobUrl = `data:audio/mpeg;base64,${base64Audio}`;
-    
-    res.json({ 
-      audioUrl: blobUrl,
-      texto: texto,
-      idioma: idioma
+// Función para obtener duración del audio
+async function getAudioDuration(audioPath) {
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(audioPath, (err, metadata) => {
+      resolve(err || !metadata.format.duration ? 5 : metadata.format.duration);
     });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al generar el audio' });
-  }
-});
+  });
+}
 
-// Endpoint para generar voz con parámetros POST
-app.post('/voz/generar', async (req, res) => {
+// Función para generar video
+async function generateVideo(texto, imageUrl, idioma = 'es') {
+  // 1. Generar audio
+  const audioBuffer = await getAudioBuffer(texto, idioma);
+  const audioPath = path.join(tempDir, `audio-${Date.now()}.mp3`);
+  await fs.promises.writeFile(audioPath, audioBuffer);
+
+  // 2. Obtener duración del audio
+  const duration = await getAudioDuration(audioPath);
+
+  // 3. Preparar imagen
+  const canvas = createCanvas(800, 600);
+  const ctx = canvas.getContext('2d');
+  
   try {
-    const { texto, idioma = 'es' } = req.body;
+    const image = await loadImage(imageUrl);
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  } catch (error) {
+    ctx.fillStyle = '#f0f0f0';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#000';
+    ctx.font = '30px Arial';
+    ctx.fillText('Imagen no disponible', 50, 50);
+  }
+
+  const imagePath = path.join(tempDir, `image-${Date.now()}.png`);
+  const out = fs.createWriteStream(imagePath);
+  const stream = canvas.createPNGStream();
+  stream.pipe(out);
+  await new Promise((resolve) => out.on('finish', resolve));
+
+  // 4. Generar video
+  const videoPath = path.join(tempDir, `video-${Date.now()}.mp4`);
+  
+  await new Promise((resolve, reject) => {
+    ffmpeg()
+      .input(imagePath)
+      .inputOptions(['-loop 1', `-t ${duration}`])
+      .input(audioPath)
+      .outputOptions([
+        '-c:v libx264',
+        '-tune stillimage',
+        '-pix_fmt yuv420p',
+        '-c:a aac',
+        '-shortest'
+      ])
+      .save(videoPath)
+      .on('end', resolve)
+      .on('error', reject);
+  });
+
+  // 5. Leer video como base64
+  const videoBuffer = await readFile(videoPath);
+  const videoBase64 = videoBuffer.toString('base64');
+
+  // 6. Limpiar archivos temporales
+  await Promise.all([
+    unlink(audioPath),
+    unlink(imagePath),
+    unlink(videoPath)
+  ].map(p => p.catch(e => console.error('Error al borrar archivo temporal:', e))));
+
+  return videoBase64;
+}
+
+// Endpoint POST para generar video
+app.post('/video', async (req, res) => {
+  try {
+    const { texto, idioma = 'es', imageUrl } = req.body;
     
-    if (!texto) {
-      return res.status(400).json({ error: 'El parámetro "texto" es requerido' });
+    if (!texto || !imageUrl) {
+      return res.status(400).json({ 
+        error: 'Parámetros requeridos: "texto" y "imageUrl"' 
+      });
     }
 
-    const audioBuffer = await getAudioBuffer(texto, idioma);
-    const base64Audio = audioBuffer.toString('base64');
-    const blobUrl = `data:audio/mpeg;base64,${base64Audio}`;
+    const videoBase64 = await generateVideo(texto, imageUrl, idioma);
+    const videoBlobUrl = `data:video/mp4;base64,${videoBase64}`;
     
-    res.json({ 
-      audioUrl: blobUrl,
+    res.json({
+      success: true,
+      videoUrl: videoBlobUrl,
       texto: texto,
       idioma: idioma,
-      mensaje: 'Audio generado con éxito'
+      imageUrl: imageUrl
     });
+    
   } catch (error) {
-    res.status(500).json({ error: 'Error al generar el audio' });
+    console.error('Error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Error al generar el video' 
+    });
   }
-});
-
-// Endpoint para listar idiomas disponibles
-app.get('/voz/idiomas', (req, res) => {
-  const idiomas = [
-    { codigo: 'es', nombre: 'Español' },
-    { codigo: 'en', nombre: 'Inglés' },
-    { codigo: 'fr', nombre: 'Francés' },
-    { codigo: 'de', nombre: 'Alemán' },
-    { codigo: 'it', nombre: 'Italiano' },
-    { codigo: 'pt', nombre: 'Portugués' },
-    { codigo: 'ja', nombre: 'Japonés' },
-    { codigo: 'ru', nombre: 'Ruso' }
-  ];
-  res.json(idiomas);
 });
 
 // Iniciar servidor
 app.listen(port, () => {
-  console.log(`Servidor de Texto a Voz en http://localhost:${port}`);
+  console.log(`Servidor listo en http://localhost:${port}`);
 });
