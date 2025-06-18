@@ -56,10 +56,11 @@ function splitTextIntoSentences(text) {
 }
 
 // 4. Generar una imagen con un sólo subtítulo encima del fondo
-async function makeSubtitleImage(backgroundUrl, subtitleText, outPath) {
+async function makeSubtitleImage(backgroundUrl, subtitleText, outPath,frameIndex) {
   const W = 800, H = 600;
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext('2d');
+  
   try {
     const img = await loadImage(backgroundUrl);
     ctx.drawImage(img, 0, 0, W, H);
@@ -67,18 +68,38 @@ async function makeSubtitleImage(backgroundUrl, subtitleText, outPath) {
     ctx.fillStyle = '#333';
     ctx.fillRect(0, 0, W, H);
   }
-  
-  // fondo oscuro semitransparente
+
+  // URL constante del PNG transparente (reemplaza con tu URL)
+   const pngUrls = [
+    'https://estaticos-cdn.prensaiberica.es/clip/2c5d8947-38c4-4300-8c7d-7e72deaf267e_alta-libre-aspect-ratio_640w_0.png',
+    'https://storage.mlcdn.com/account_image/1359544/URoiMHeCK0PwJW7IDCUGO8qIXed8h29AhTmJf3vR.png',
+  ];
+  // Seleccionar PNG basado en el índice del frame (cicla si es necesario)
+  const selectedPngUrl = pngUrls[frameIndex % pngUrls.length];
+
+  try {
+    // Cargar y dibujar el PNG transparente
+    const pngImg = await loadImage(selectedPngUrl);
+    const pngWidth = 400; // Ancho deseado del PNG
+    const pngHeight = (pngImg.height / pngImg.width) * pngWidth; // Mantener proporción
+    // Posición 
+    const randomX = 500;
+    const randomY = 300;
+    
+    ctx.drawImage(pngImg, randomX, randomY, pngWidth, pngHeight);
+  } catch (error) {
+    console.error('Error al cargar el PNG transparente:', error);
+  }
+
+  // Resto del código para los subtítulos (se mantiene igual)
   const lineHeight = 40;
   const padding = 20;
   const textWidth = W - 2 * padding;
   
-  // Medir el texto para ajustar el fondo
   ctx.font = '30px Arial';
   const lines = [];
   let currentLine = '';
   
-  // Dividir el texto en líneas que quepan en el ancho
   for (const word of subtitleText.split(' ')) {
     const testLine = currentLine ? `${currentLine} ${word}` : word;
     const metrics = ctx.measureText(testLine);
@@ -96,7 +117,6 @@ async function makeSubtitleImage(backgroundUrl, subtitleText, outPath) {
   const totalTextHeight = lines.length * lineHeight;
   const startY = H - totalTextHeight - 60;
   
-  // Dibujar fondo
   ctx.fillStyle = 'rgba(0,0,0,0.6)';
   ctx.fillRect(
     padding, 
@@ -105,7 +125,6 @@ async function makeSubtitleImage(backgroundUrl, subtitleText, outPath) {
     totalTextHeight + 40
   );
   
-  // Dibujar texto
   ctx.fillStyle = '#fff';
   ctx.textAlign = 'center';
   
@@ -113,13 +132,11 @@ async function makeSubtitleImage(backgroundUrl, subtitleText, outPath) {
     ctx.fillText(line, W/2, startY + (i * lineHeight));
   });
   
-  // guardar
   const out = fs.createWriteStream(outPath);
   const stream = canvas.createPNGStream();
   stream.pipe(out);
   return new Promise(resolve => out.on('finish', resolve));
 }
-
 // 5. Calcular duraciones proporcionales a la longitud del texto
 function calculateDurations(sentences, totalDuration) {
   // Calcular longitud total de todos los caracteres
@@ -160,7 +177,7 @@ async function generateVideo(texto, imageUrl, idioma = 'es') {
   const imageFiles = [];
   for (let i = 0; i < sentences.length; i++) {
     const imgPath = path.join(tempDir, `sub_${i}_${Date.now()}.png`);
-    await makeSubtitleImage(imageUrl, sentences[i], imgPath);
+    await makeSubtitleImage(imageUrl, sentences[i], imgPath,i);
     imageFiles.push({ path: imgPath, dur: sentenceDurations[i] });
   }
 
