@@ -8,6 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import { tmpdir } from 'os';
 import { promisify } from 'util';
+import translate from '@iamtraction/google-translate';
 import cors from 'cors'; /// Esto sirve para hacer pruebas con react vita
 
 ffmpeg.setFfmpegPath(ffmpegPath.path);
@@ -30,7 +31,19 @@ const tempDir = tmpdir();
 
 // 1. Obtener audio como buffer
 async function getAudioBuffer(texto, idioma = 'es') {
-  const url = await tts.getAudioUrl(texto, { lang: idioma, slow: false });
+  // Primero traducir el texto al idioma objetivo si es diferente del original
+  let translatedText = texto;
+  if (idioma !== 'es') { // Asumiendo que el texto original está en español
+    try {
+      const result = await translate(texto, { to: idioma });
+      translatedText = result.text;
+    } catch (error) {
+      console.error('Error al traducir el texto:', error);
+      // Usar el texto original si falla la traducción
+    }
+  }
+  
+  const url = await tts.getAudioUrl(translatedText, { lang: idioma, slow: false });
   const resp = await axios.get(url, { responseType: 'arraybuffer' });
   return Buffer.from(resp.data);
 }
@@ -56,7 +69,7 @@ function splitTextIntoSentences(text) {
 }
 
 // 4. Generar una imagen con un sólo subtítulo encima del fondo
-async function makeSubtitleImage(backgroundUrl, subtitleText, outPath,frameIndex) {
+async function makeSubtitleImage(backgroundUrl, subtitleText, outPath, frameIndex) {
   const W = 800, H = 600;
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext('2d');
@@ -70,7 +83,7 @@ async function makeSubtitleImage(backgroundUrl, subtitleText, outPath,frameIndex
   }
 
   // URL constante del PNG transparente (reemplaza con tu URL)
-   const pngUrls = [
+  const pngUrls = [
     'https://estaticos-cdn.prensaiberica.es/clip/2c5d8947-38c4-4300-8c7d-7e72deaf267e_alta-libre-aspect-ratio_640w_0.png',
     'https://storage.mlcdn.com/account_image/1359544/URoiMHeCK0PwJW7IDCUGO8qIXed8h29AhTmJf3vR.png',
   ];
@@ -137,6 +150,7 @@ async function makeSubtitleImage(backgroundUrl, subtitleText, outPath,frameIndex
   stream.pipe(out);
   return new Promise(resolve => out.on('finish', resolve));
 }
+
 // 5. Calcular duraciones proporcionales a la longitud del texto
 function calculateDurations(sentences, totalDuration) {
   // Calcular longitud total de todos los caracteres
@@ -157,18 +171,30 @@ function calculateDurations(sentences, totalDuration) {
 
 // 6. Generar vídeo con subtítulos por frases
 async function generateVideo(texto, imageUrl, idioma = 'es') {
+  // Primero traducir el texto al idioma objetivo si es diferente del original
+  let translatedText = texto;
+  if (idioma !== 'es') { // Asumiendo que el texto original está en español
+    try {
+      const result = await translate(texto, { to: idioma });
+      translatedText = result.text;
+    } catch (error) {
+      console.error('Error al traducir el texto:', error);
+      // Usar el texto original si falla la traducción
+    }
+  }
+
   // Audio
   const audioBuf = await getAudioBuffer(texto, idioma);
   //le ponemos el nombre de la fecha mas un numero random entre 1 y 3000
   const audioPath = path.join(tempDir, `audio-${Date.now()+"rand"+(Math.floor(Math.random() * 3000) + 1)}.mp3`); 
-  console.log(audioPath);
+  //console.log(audioPath);
   await writeFile(audioPath, audioBuf);
 
   // Obtener duración total del audio
   const totalDuration = await getAudioDuration(audioPath);
 
-  // Dividir texto en frases
-  const sentences = splitTextIntoSentences(texto);
+  // Dividir texto en frases (usamos el texto traducido para los subtítulos)
+  const sentences = splitTextIntoSentences(translatedText);
   
   // Calcular duraciones proporcionales
   const sentenceDurations = calculateDurations(sentences, totalDuration);
@@ -177,7 +203,7 @@ async function generateVideo(texto, imageUrl, idioma = 'es') {
   const imageFiles = [];
   for (let i = 0; i < sentences.length; i++) {
     const imgPath = path.join(tempDir, `sub_${i}_${Date.now()}.png`);
-    await makeSubtitleImage(imageUrl, sentences[i], imgPath,i);
+    await makeSubtitleImage(imageUrl, sentences[i], imgPath, i);
     imageFiles.push({ path: imgPath, dur: sentenceDurations[i] });
   }
 
