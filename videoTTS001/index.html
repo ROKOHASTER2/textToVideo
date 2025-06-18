@@ -1,13 +1,198 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vite + React + TS</title>
+    <title>Generador de Videos con Voz</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        line-height: 1.6;
+      }
+      h1 {
+        color: #2c3e50;
+        text-align: center;
+      }
+      .form-group {
+        margin-bottom: 15px;
+      }
+      label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: bold;
+      }
+      input,
+      textarea,
+      select {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        box-sizing: border-box;
+      }
+      textarea {
+        height: 100px;
+        resize: vertical;
+      }
+      button {
+        background-color: #3498db;
+        color: white;
+        border: none;
+        padding: 10px 15px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+        width: 100%;
+      }
+      button:hover {
+        background-color: #2980b9;
+      }
+      button:disabled {
+        background-color: #95a5a6;
+        cursor: not-allowed;
+      }
+      #videoContainer {
+        margin-top: 20px;
+        text-align: center;
+      }
+      #videoResult {
+        max-width: 100%;
+        background-color: #000;
+      }
+      .status {
+        margin-top: 10px;
+        padding: 10px;
+        border-radius: 4px;
+      }
+      .success {
+        background-color: #d4edda;
+        color: #155724;
+      }
+      .error {
+        background-color: #f8d7da;
+        color: #721c24;
+      }
+      .loading {
+        color: #0c5460;
+        background-color: #d1ecf1;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <h1>Generador de Videos con Voz</h1>
+
+    <div class="form-group">
+      <label for="texto">Texto a convertir en voz:</label>
+      <textarea
+        id="texto"
+        placeholder="Escribe el texto que quieres convertir en voz..."
+      ></textarea>
+    </div>
+
+    <div class="form-group">
+      <label for="idioma">Idioma:</label>
+      <select id="idioma">
+        <option value="es">Español</option>
+        <option value="en">Inglés</option>
+        <option value="fr">Francés</option>
+        <option value="de">Alemán</option>
+        <option value="it">Italiano</option>
+        <option value="pt">Portugués</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="imageUrl">URL de la imagen de fondo:</label>
+      <input
+        type="text"
+        id="imageUrl"
+        placeholder="https://ejemplo.com/imagen.jpg"
+      />
+    </div>
+
+    <div class="form-group">
+      <label for="apiUrl">URL del API (servidor de generación):</label>
+      <input
+        type="text"
+        id="apiUrl"
+        placeholder="http://localhost:3000/video"
+        value="http://localhost:3000/video"
+      />
+    </div>
+
+    <button id="generateBtn">Generar Video</button>
+
+    <div id="status" class="status" style="display: none"></div>
+
+    <div id="videoContainer" style="display: none">
+      <h2>Resultado:</h2>
+      <video id="videoResult" controls></video>
+    </div>
+
+    <script>
+      document
+        .getElementById("generateBtn")
+        .addEventListener("click", async () => {
+          const texto = document.getElementById("texto").value;
+          const idioma = document.getElementById("idioma").value;
+          const imageUrl = document.getElementById("imageUrl").value;
+          const apiUrl = document.getElementById("apiUrl").value;
+          const statusDiv = document.getElementById("status");
+          const videoContainer = document.getElementById("videoContainer");
+          const videoResult = document.getElementById("videoResult");
+          const generateBtn = document.getElementById("generateBtn");
+
+          if (!texto || !imageUrl) {
+            showStatus("Por favor completa todos los campos", "error");
+            return;
+          }
+
+          try {
+            // Mostrar estado de carga
+            generateBtn.disabled = true;
+            showStatus("Generando video...", "loading");
+            videoContainer.style.display = "none";
+
+            // Hacer la petición al servidor de generación
+            const response = await fetch(apiUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                texto: texto,
+                idioma: idioma,
+                imageUrl: imageUrl,
+              }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+              throw new Error(data.error || "Error al generar el video");
+            }
+
+            // Mostrar el video resultante
+            videoResult.src = data.videoUrl;
+            videoContainer.style.display = "block";
+            showStatus("Video generado con éxito!", "success");
+          } catch (error) {
+            console.error("Error:", error);
+            showStatus(error.message, "error");
+          } finally {
+            generateBtn.disabled = false;
+          }
+        });
+
+      function showStatus(message, type) {
+        const statusDiv = document.getElementById("status");
+        statusDiv.textContent = message;
+        statusDiv.className = `status ${type}`;
+        statusDiv.style.display = "block";
+      }
+    </script>
   </body>
 </html>
