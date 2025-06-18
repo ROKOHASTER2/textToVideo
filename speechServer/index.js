@@ -29,23 +29,74 @@ app.use(express.json());
 
 const tempDir = tmpdir();
 
-// 1. Obtener audio como buffer
+// 1. Obtener audio como buffer 
 async function getAudioBuffer(texto, idioma = 'es') {
   // Primero traducir el texto al idioma objetivo si es diferente del original
   let translatedText = texto;
-  if (idioma !== 'es') { // Asumiendo que el texto original está en español
+  if (idioma !== 'es') {
     try {
       const result = await translate(texto, { to: idioma });
       translatedText = result.text;
     } catch (error) {
       console.error('Error al traducir el texto:', error);
-      // Usar el texto original si falla la traducción
+    }
+  }
+
+  // Dividir el texto en fragmentos de menos de 200 caracteres
+  const textChunks = [];
+  let currentChunk = '';
+  
+  // Dividir por oraciones primero
+  const sentences = translatedText.split(/(?<=[.!?])\s+/);
+  
+  for (const sentence of sentences) {
+    if (currentChunk.length + sentence.length < 200) {
+      currentChunk += (currentChunk ? ' ' : '') + sentence;
+    } else {
+      if (currentChunk) textChunks.push(currentChunk);
+      currentChunk = sentence;
     }
   }
   
-  const url = await tts.getAudioUrl(translatedText, { lang: idioma, slow: false });
-  const resp = await axios.get(url, { responseType: 'arraybuffer' });
-  return Buffer.from(resp.data);
+  if (currentChunk) textChunks.push(currentChunk);
+
+  // Si aún hay fragmentos muy largos, dividir por palabras
+  const finalChunks = [];
+  for (const chunk of textChunks) {
+    if (chunk.length < 200) {
+      finalChunks.push(chunk);
+    } else {
+      const words = chunk.split(' ');
+      let tempChunk = '';
+      for (const word of words) {
+        if (tempChunk.length + word.length < 200) {
+          tempChunk += (tempChunk ? ' ' : '') + word;
+        } else {
+          if (tempChunk) finalChunks.push(tempChunk);
+          tempChunk = word;
+        }
+      }
+      if (tempChunk) finalChunks.push(tempChunk);
+    }
+  }
+
+  // Obtener URLs de audio para cada fragmento
+  const audioUrls = await Promise.all(
+    finalChunks.map(chunk => 
+      tts.getAudioUrl(chunk, { lang: idioma, slow: false })
+    )
+  );
+
+  // Descargar y combinar todos los fragmentos de audio
+  const audioBuffers = await Promise.all(
+    audioUrls.map(url => 
+      axios.get(url, { responseType: 'arraybuffer' })
+        .then(res => Buffer.from(res.data))
+    )
+  );
+
+  // Combinar todos los buffers en uno solo
+  return Buffer.concat(audioBuffers);
 }
 
 // 2. Duración del audio
@@ -171,6 +222,7 @@ function calculateDurations(sentences, totalDuration) {
 
 // 6. Generar vídeo con subtítulos por frases
 async function generateVideo(texto, imageUrl, idioma = 'es') {
+  
   // Primero traducir el texto al idioma objetivo si es diferente del original
   let translatedText = texto;
   if (idioma !== 'es') { // Asumiendo que el texto original está en español
@@ -266,7 +318,50 @@ app.post('/video', async (req, res) => {
     res.status(500).json({ success: false, error: 'Error generando el vídeo.' });
   }
 });
+//PARA JSONS.
+app.post('/video-from-json', async (req, res) => {
+  try {
+    const { heritageData, targetLanguage = 'en',targetLength } = req.body;
+    
+    if (!heritageData?.description?.local?.extended || !heritageData.image) {
+      return res.status(400).json({ error: 'Datos incompletos.' });
+    }
 
+    const videoB64 = await generateVideoFromJSON(heritageData, targetLanguage,targetLength);
+    res.json({ success: true, videoUrl: `data:video/mp4;base64,${videoB64}` });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ success: false, error: 'Error generando el vídeo.' });
+  }
+});
+async function generateVideoFromJSON(heritageData, targetLanguage = 'en',length) {
+  const originalText = heritageData.description.local[length];
+  
+  // Limitar el texto a un máximo razonable (opcional)
+  const maxLength = 130000; // IGNORADA HISTORICA
+  const truncatedText = originalText.length > maxLength 
+    ? originalText.substring(0, maxLength) + '...' 
+    : originalText;
+
+  let audioText = truncatedText;
+  let subtitleText = truncatedText;
+
+  if (targetLanguage !== 'local') {
+    try {
+      const translation = await translate(truncatedText, { to: targetLanguage });
+      audioText = translation.text;
+    } catch (error) {
+      console.error("Error traduciendo:", error);
+    }
+  }
+
+  return await generateVideo(
+    audioText,
+    heritageData.image,
+    targetLanguage === 'local' ? 'es' : targetLanguage, // Asume 'es' como default
+    subtitleText
+  );
+}
 app.listen(port, () => {
   console.log(`Servidor en http://localhost:${port}`);
 });
