@@ -8,11 +8,10 @@ import path from 'path';
 import { tmpdir } from 'os';
 import { promisify } from 'util';
 import translate from '@iamtraction/google-translate';
-import { 
+import {
   getAudioBuffer,
   getAudioDuration,
   splitTextIntoSentences,
-  makeSubtitleImage,
   calculateDurations
 } from './utils.js';
 
@@ -33,8 +32,22 @@ try {
   }
 }
 
+async function isGif(url) {
+  const response = await axios.head(url);
+  return response.headers['content-type'] === 'image/gif';
+}
+
+async function downloadFile(url, dest) {
+  const writer = fs.createWriteStream(dest);
+  const response = await axios({ url, method: 'GET', responseType: 'stream' });
+  response.data.pipe(writer);
+  return new Promise((resolve, reject) => {
+    writer.on('finish', resolve);
+    writer.on('error', reject);
+  });
+}
+
 export async function generateVideo(texto, imageUrl, idioma = 'es') {
-  // Primero traducir el texto al idioma objetivo si es diferente del original
   let translatedText = texto;
   if (idioma !== 'es') {
     try {
@@ -45,48 +58,60 @@ export async function generateVideo(texto, imageUrl, idioma = 'es') {
     }
   }
 
-  // Audio
   const audioBuf = await getAudioBuffer(texto, idioma);
-  const audioPath = path.join(tempDir, `audio-${Date.now()}-rand${Math.floor(Math.random() * 3000) + 1}.mp3`); 
+  const audioPath = path.join(tempDir, `audio-${Date.now()}.mp3`);
   await writeFile(audioPath, audioBuf);
-
-  // Obtener duración total del audio
   const totalDuration = await getAudioDuration(audioPath);
-
-  // Dividir texto en frases (usamos el texto traducido para los subtítulos)
   const sentences = splitTextIntoSentences(translatedText);
-  
-  // Calcular duraciones proporcionales
   const sentenceDurations = calculateDurations(sentences, totalDuration);
 
-  // Imágenes de subtítulos
-  const imageFiles = [];
+  const isGifFormat = await isGif(imageUrl);
+  const downloadedPath = path.join(tempDir, `input-${Date.now()}${isGifFormat ? '.gif' : '.png'}`);
+  await downloadFile(imageUrl, downloadedPath);
+
+  const videoParts = [];
+
   for (let i = 0; i < sentences.length; i++) {
-    const imgPath = path.join(tempDir, `sub_${i}_${Date.now()}.png`);
-    await makeSubtitleImage(imageUrl, sentences[i], imgPath, i);
-    imageFiles.push({ path: imgPath, dur: sentenceDurations[i] });
+    const outputVid = path.join(tempDir, `clip_${i}_${Date.now()}.mp4`);
+    const duration = sentenceDurations[i];
+
+    await new Promise((resolve, reject) => {
+      ffmpeg()
+        .input(downloadedPath)
+        .inputOptions(isGifFormat ? [] : ['-loop 1'])
+        .duration(duration)
+        .videoFilters([
+          `fps=30`,
+          `drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='${sentences[i].replace(/:/g, '\\:').replace(/'/g, "\\'")}':fontcolor=white:fontsize=36:box=1:boxcolor=black@0.5:boxborderw=10:x=(w-text_w)/2:y=h-(text_h*2)`
+        ])
+        .outputOptions([
+          '-pix_fmt yuv420p',
+          '-r 30',
+          '-c:v libx264',
+        ])
+        .save(outputVid)
+        .on('end', resolve)
+        .on('error', reject);
+    });
+
+    videoParts.push({ path: outputVid, dur: duration });
   }
 
-  // Concat list
   const concatPath = path.join(tempDir, `concat-${Date.now()}.txt`);
-  let concatTxt = imageFiles.map(f => `file '${f.path}'\nduration ${f.dur.toFixed(3)}`).join('\n');
-  // Repetimos la última línea sin duration para FFmpeg
-  concatTxt += `\nfile '${imageFiles[imageFiles.length-1].path}'\n`;
+  let concatTxt = videoParts.map(f => `file '${f.path}'`).join('\n');
   await writeFile(concatPath, concatTxt);
 
-  // Thumbnail video (sin audio)
   const silentVid = path.join(tempDir, `vid-noaudio-${Date.now()}.mp4`);
   await new Promise((res, rej) => {
     ffmpeg()
       .input(concatPath)
       .inputOptions(['-f concat', '-safe 0'])
-      .outputOptions(['-c:v libx264', '-pix_fmt yuv420p', '-vf fps=25'])
+      .outputOptions(['-c copy'])
       .save(silentVid)
       .on('end', res)
       .on('error', rej);
   });
 
-  // Mezclar audio y vídeo
   const finalVid = path.join(tempDir, `final-${Date.now()}.mp4`);
   await new Promise((res, rej) => {
     ffmpeg()
@@ -98,12 +123,10 @@ export async function generateVideo(texto, imageUrl, idioma = 'es') {
       .on('error', rej);
   });
 
-  // Convertir a base64
   const vidBuf = await readFile(finalVid);
   const b64 = vidBuf.toString('base64');
 
-  // Limpieza
-  const toRemove = [audioPath, concatPath, silentVid, finalVid, ...imageFiles.map(f => f.path)];
+  const toRemove = [audioPath, concatPath, silentVid, finalVid, downloadedPath, ...videoParts.map(f => f.path)];
   await Promise.all(toRemove.map(p => unlink(p).catch(() => {})));
 
   return b64;
@@ -111,10 +134,9 @@ export async function generateVideo(texto, imageUrl, idioma = 'es') {
 
 export async function generateVideoFromJSON(heritageData, targetLanguage = 'en', length) {
   const originalText = heritageData.description.local[length];
-  
   const maxLength = 130000;
-  const truncatedText = originalText.length > maxLength 
-    ? originalText.substring(0, maxLength) + '...' 
+  const truncatedText = originalText.length > maxLength
+    ? originalText.substring(0, maxLength) + '...'
     : originalText;
 
   let audioText = truncatedText;
