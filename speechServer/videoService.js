@@ -21,6 +21,7 @@ const readFile = promisify(fs.readFile);
 const writeFile = promisify(fs.writeFile);
 const unlink = promisify(fs.unlink);
 
+const tempDir = tmpdir();
 
 export async function generateVideo(texto, imageUrl, idioma = 'es') {
   // Primero traducir el texto al idioma objetivo si es diferente del original
