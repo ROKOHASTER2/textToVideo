@@ -100,15 +100,15 @@ export async function makeSubtitleImage(backgroundUrl, subtitleText, outPath, fr
     ctx.fillRect(0, 0, W, H);
   }
 
-  const pngUrls = [
-    'https://estaticos-cdn.prensaiberica.es/clip/2c5d8947-38c4-4300-8c7d-7e72deaf267e_alta-libre-aspect-ratio_640w_0.png',
-    'https://storage.mlcdn.com/account_image/1359544/URoiMHeCK0PwJW7IDCUGO8qIXed8h29AhTmJf3vR.png',
+  const pngTubers = [
+    'https://facturacion-electronica.ec/wp-content/uploads/2019/04/scratching_head_pc_800_clr_2723.png',
+    'https://pbs.twimg.com/media/BqQ5S0iCQAACkRA.png',
   ];
-  const selectedPngUrl = pngUrls[frameIndex % pngUrls.length];
+  const selectedPngUrl = pngTubers[frameIndex % pngTubers.length];
 
   try {
     const pngImg = await loadImage(selectedPngUrl);
-    const pngWidth = 400;
+    const pngWidth = 300;
     const pngHeight = (pngImg.height / pngImg.width) * pngWidth;
     const randomX = 500;
     const randomY = 300;

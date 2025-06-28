@@ -20,8 +20,18 @@ ffmpeg.setFfmpegPath(ffmpegPath.path);
 const readFile = promisify(fs.readFile);
 const writeFile = promisify(fs.writeFile);
 const unlink = promisify(fs.unlink);
+const mkdir = promisify(fs.mkdir);
 
-const tempDir = tmpdir();
+// Create OcityTemp directory if it doesn't exist
+const tempDir = path.join(tmpdir(), 'OcityTemp');
+try {
+  await mkdir(tempDir, { recursive: true });
+} catch (error) {
+  if (error.code !== 'EEXIST') {
+    console.error('Error creating temp directory:', error);
+    throw error;
+  }
+}
 
 export async function generateVideo(texto, imageUrl, idioma = 'es') {
   // Primero traducir el texto al idioma objetivo si es diferente del original
@@ -37,7 +47,7 @@ export async function generateVideo(texto, imageUrl, idioma = 'es') {
 
   // Audio
   const audioBuf = await getAudioBuffer(texto, idioma);
-  const audioPath = path.join(tempDir, `audio-${Date.now()+"rand"+(Math.floor(Math.random() * 3000) + 1)}.mp3`); 
+  const audioPath = path.join(tempDir, `audio-${Date.now()}-rand${Math.floor(Math.random() * 3000) + 1}.mp3`); 
   await writeFile(audioPath, audioBuf);
 
   // Obtener duración total del audio
