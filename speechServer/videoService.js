@@ -1,6 +1,6 @@
 import axios from "axios";
 import tts from "google-tts-api";
-import { createCanvas, loadImage } from "canvas";
+import { createCanvas } from "canvas";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "@ffmpeg-installer/ffmpeg";
 import fs from "fs";
@@ -8,12 +8,6 @@ import path from "path";
 import { tmpdir } from "os";
 import { promisify } from "util";
 import translate from "@iamtraction/google-translate";
-import {
-  getAudioBuffer,
-  getAudioDuration,
-  splitTextIntoSentences,
-  calculateDurations,
-} from "./utils.js";
 
 ffmpeg.setFfmpegPath(ffmpegPath.path);
 const readFile = promisify(fs.readFile);
@@ -21,7 +15,13 @@ const writeFile = promisify(fs.writeFile);
 const unlink = promisify(fs.unlink);
 const mkdir = promisify(fs.mkdir);
 
-// Create OcityTemp directory if it doesn't exist
+// PNG Tuber URLs
+const pngTubers = [
+  "https://facturacion-electronica.ec/wp-content/uploads/2019/04/scratching_head_pc_800_clr_2723.png",
+  "https://pbs.twimg.com/media/BqQ5S0iCQAACkRA.png",
+];
+
+// Crear directorio temporal
 const tempDir = path.join(tmpdir(), "OcityTemp");
 try {
   await mkdir(tempDir, { recursive: true });
@@ -32,12 +32,7 @@ try {
   }
 }
 
-// PNG Tuber URLs
-const pngTubers = [
-  "https://facturacion-electronica.ec/wp-content/uploads/2019/04/scratching_head_pc_800_clr_2723.png",
-  "https://pbs.twimg.com/media/BqQ5S0iCQAACkRA.png",
-];
-
+// --- Funciones principales ---
 async function isGif(url) {
   try {
     const response = await axios.head(url);
@@ -153,7 +148,7 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
   // Preparamos el canvas para medir texto
   const canvas = createCanvas(800, 600);
   const ctx = canvas.getContext("2d");
-  ctx.font = "36px Arial"; // Misma fuente que usaremos en FFmpeg
+  ctx.font = "36px Arial";
 
   let videoParts = [];
 
@@ -164,13 +159,13 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
     const tuberPath = tuberPaths[tuberIndex];
 
     // Dividimos el texto en múltiples líneas
-    const maxTextWidth = 700; // Ancho máximo para subtítulos
+    const maxTextWidth = 700;
     const wrappedText = wrapText(ctx, sentences[i], maxTextWidth);
     const escapedText = wrappedText.replace(/:/g, "\\:").replace(/'/g, "\\'");
 
     // Calcular número de líneas para ajustar la posición
     const lineCount = wrappedText.split("\n").length;
-    const lineHeight = 50; // Altura aproximada por línea (36px font + 14px spacing)
+    const lineHeight = 50;
 
     await new Promise((resolve, reject) => {
       const ff = isAnimated
@@ -178,10 +173,9 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
         : ffmpeg().input(downloadedPath);
 
       ff.input(tuberPath);
-      // Definir los filtros como un array de objetos
       const filters = [];
 
-      // Procesar imagen principal (agregar loop si es estática)
+      // Procesar imagen principal
       let mainInput = "0:v";
       if (!isAnimated) {
         filters.push({
@@ -209,18 +203,18 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
         outputs: "scaled",
       });
 
-      // Overlay (ajustar posición del tuber)
+      // Overlay
       filters.push({
         filter: "overlay",
         options: {
           x: 500,
-          y: 200, // Mover tuber hacia arriba para dar espacio a subtítulos
+          y: 200,
         },
         inputs: ["scaled", "tuber"],
         outputs: "with_tuber",
       });
 
-      // Añadir el texto en la parte inferior
+      // Añadir texto
       filters.push({
         filter: "drawtext",
         options: {
@@ -232,14 +226,14 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
           boxcolor: "black@0.5",
           boxborderw: 10,
           x: "(w-text_w)/2",
-          y: "h - text_h - 20", // Posición fija en la parte inferior
+          y: "h - text_h - 20",
           line_spacing: 15,
         },
         inputs: "with_tuber",
         outputs: "out",
       });
 
-      // Aplicar los filtros
+      // Aplicar filtros
       ff.complexFilter(filters)
         .outputOptions([
           "-map [out]",
@@ -345,4 +339,108 @@ export async function generateVideoFromJSON(
     heritageData.image,
     targetLanguage === "local" ? "es" : targetLanguage
   );
+}
+
+// --- Funciones de utilidad ---
+async function getAudioBuffer(texto, idioma = "es") {
+  let translatedText = texto;
+
+  try {
+    const result = await translate(texto, { to: idioma });
+    translatedText = result.text;
+  } catch (error) {
+    console.error("Error al traducir el texto:", error);
+  }
+
+  // Dividir el texto en fragmentos manejables
+  const textChunks = [];
+  let currentChunk = "";
+
+  const sentences = translatedText.split(/(?<=[.!?])\s+/);
+
+  for (const sentence of sentences) {
+    if (currentChunk.length + sentence.length < 200) {
+      currentChunk += (currentChunk ? " " : "") + sentence;
+    } else {
+      if (currentChunk) textChunks.push(currentChunk);
+      currentChunk = sentence;
+    }
+  }
+
+  if (currentChunk) textChunks.push(currentChunk);
+
+  // Procesar fragmentos largos
+  const finalChunks = [];
+  for (const chunk of textChunks) {
+    if (chunk.length < 200) {
+      finalChunks.push(chunk);
+    } else {
+      const words = chunk.split(" ");
+      let tempChunk = "";
+      for (const word of words) {
+        if (tempChunk.length + word.length < 200) {
+          tempChunk += (tempChunk ? " " : "") + word;
+        } else {
+          if (tempChunk) finalChunks.push(tempChunk);
+          tempChunk = word;
+        }
+      }
+      if (tempChunk) finalChunks.push(tempChunk);
+    }
+  }
+
+  // Generar audio para cada fragmento
+  const audioUrls = await Promise.all(
+    finalChunks.map((chunk) =>
+      tts.getAudioUrl(chunk, { lang: idioma, slow: false })
+    )
+  );
+
+  // Descargar y combinar los buffers de audio
+  const audioBuffers = await Promise.all(
+    audioUrls.map((url) =>
+      axios
+        .get(url, { responseType: "arraybuffer" })
+        .then((res) => Buffer.from(res.data))
+    )
+  );
+
+  return Buffer.concat(audioBuffers);
+}
+
+async function getAudioDuration(filePath) {
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(filePath, (err, metadata) => {
+      if (err || !metadata.format.duration) {
+        console.error("Error al obtener duración del audio:", err);
+        resolve(5);
+      } else {
+        resolve(metadata.format.duration);
+      }
+    });
+  });
+}
+
+function splitTextIntoSentences(text) {
+  return text
+    .split(/(?<=[.!?])\s+/g)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+function calculateDurations(sentences, totalDuration) {
+  const totalChars = sentences.reduce(
+    (sum, sentence) => sum + sentence.length,
+    0
+  );
+
+  if (totalChars === 0) {
+    const uniformDuration = totalDuration / sentences.length;
+    return Array(sentences.length).fill(uniformDuration);
+  }
+
+  return sentences.map((sentence) => {
+    const proportion = sentence.length / totalChars;
+    return proportion * totalDuration;
+  });
 }
