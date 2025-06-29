@@ -173,8 +173,11 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
     const lineHeight = 50; // Altura aproximada por línea (36px font + 14px spacing)
 
     await new Promise((resolve, reject) => {
-      const ff = ffmpeg().input(downloadedPath).input(tuberPath);
+      const ff = isAnimated
+        ? ffmpeg().input(downloadedPath).inputOptions("-stream_loop -1")
+        : ffmpeg().input(downloadedPath);
 
+      ff.input(tuberPath);
       // Definir los filtros como un array de objetos
       const filters = [];
 
