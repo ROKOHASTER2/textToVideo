@@ -16,13 +16,12 @@ const PNG_TUBERS = [
 
 export async function getAudioBuffer(texto, idioma = "es") {
   let translatedText = texto;
-  if (idioma !== "es") {
-    try {
-      const result = await translate(texto, { to: idioma });
-      translatedText = result.text;
-    } catch (error) {
-      console.error("Error al traducir el texto:", error);
-    }
+
+  try {
+    const result = await translate(texto, { to: idioma });
+    translatedText = result.text;
+  } catch (error) {
+    console.error("Error al traducir el texto:", error);
   }
 
   // Dividir el texto en fragmentos manejables para TTS
@@ -140,50 +139,69 @@ export async function makeSubtitleImage(
     console.error("Error al cargar PNG tuber:", error);
   }
 
-  // Configuración del texto
-  const LINE_HEIGHT = 40;
+  // Configuración del texto mejorada
+  const MAX_LINE_WIDTH = WIDTH - 40; // Margen más pequeño
+  const LINE_HEIGHT = 30; // Altura de línea reducida
+  const MAX_LINES = 5; // Máximo de líneas permitidas
+  const FONT_SIZE = 24; // Tamaño de fuente reducido
   const PADDING = 20;
-  const TEXT_WIDTH = WIDTH - 2 * PADDING;
+  const TEXT_BOX_PADDING = 15;
 
-  ctx.font = "30px Arial";
+  ctx.font = `${FONT_SIZE}px Arial`;
   ctx.fillStyle = "#fff";
   ctx.textAlign = "center";
 
-  // Dividir el texto en líneas que quepan en el ancho disponible
-  const lines = [];
-  let currentLine = "";
+  // Función para dividir texto en líneas que quepan
+  function wrapText(text, maxWidth) {
+    const words = text.split(" ");
+    const lines = [];
+    let currentLine = words[0];
 
-  for (const word of subtitleText.split(" ")) {
-    const testLine = currentLine ? `${currentLine} ${word}` : word;
-    const metrics = ctx.measureText(testLine);
+    for (let i = 1; i < words.length; i++) {
+      const word = words[i];
+      const testLine = currentLine + " " + word;
+      const metrics = ctx.measureText(testLine);
 
-    if (metrics.width > TEXT_WIDTH && currentLine) {
-      lines.push(currentLine);
-      currentLine = word;
-    } else {
-      currentLine = testLine;
+      if (metrics.width <= maxWidth) {
+        currentLine = testLine;
+      } else {
+        lines.push(currentLine);
+        currentLine = word;
+      }
     }
+
+    lines.push(currentLine);
+    return lines;
   }
 
-  if (currentLine) lines.push(currentLine);
+  // Dividir el texto en líneas que quepan
+  let lines = wrapText(subtitleText, MAX_LINE_WIDTH);
 
-  // Calcular posición vertical del texto
-  const totalTextHeight = lines.length * LINE_HEIGHT;
-  const textStartY = HEIGHT - totalTextHeight - 60;
+  // Si hay demasiadas líneas, reducimos el texto
+  if (lines.length > MAX_LINES) {
+    const originalLines = lines.length;
+    lines = lines.slice(0, MAX_LINES);
+    lines[MAX_LINES - 1] =
+      lines[MAX_LINES - 1].substring(0, lines[MAX_LINES - 1].length - 3) +
+      "...";
+    console.warn(`Texto truncado de ${originalLines} a ${MAX_LINES} líneas`);
+  }
+
+  // Calcular dimensiones del cuadro de texto
+  const textHeight = lines.length * LINE_HEIGHT;
+  const textBoxHeight = textHeight + 2 * TEXT_BOX_PADDING;
+  const textBoxY = HEIGHT - textBoxHeight - 20;
 
   // Dibujar fondo semitransparente para el texto
-  ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-  ctx.fillRect(
-    PADDING,
-    textStartY - 20,
-    WIDTH - 2 * PADDING,
-    totalTextHeight + 40
-  );
+  ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+  ctx.roundRect(PADDING, textBoxY, WIDTH - 2 * PADDING, textBoxHeight, 10);
+  ctx.fill();
 
   // Dibujar cada línea de texto
   ctx.fillStyle = "#fff";
   lines.forEach((line, i) => {
-    ctx.fillText(line, WIDTH / 2, textStartY + i * LINE_HEIGHT);
+    const y = textBoxY + TEXT_BOX_PADDING + i * LINE_HEIGHT + LINE_HEIGHT / 2;
+    ctx.fillText(line, WIDTH / 2, y);
   });
 
   // Guardar la imagen resultante

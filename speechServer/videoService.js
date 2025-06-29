@@ -12,7 +12,6 @@ import {
   getAudioBuffer,
   getAudioDuration,
   splitTextIntoSentences,
-  makeSubtitleImage,
   calculateDurations,
 } from "./utils.js";
 
@@ -81,16 +80,35 @@ async function isAnimatedGif(filePath) {
   }
 }
 
+function wrapText(context, text, maxWidth) {
+  const words = text.split(" ");
+  const lines = [];
+  let currentLine = words[0];
+
+  for (let i = 1; i < words.length; i++) {
+    const word = words[i];
+    const testLine = currentLine + " " + word;
+    const metrics = context.measureText(testLine);
+
+    if (metrics.width < maxWidth) {
+      currentLine = testLine;
+    } else {
+      lines.push(currentLine);
+      currentLine = word;
+    }
+  }
+  lines.push(currentLine);
+  return lines.join("\n");
+}
+
 export async function generateVideo(texto, imageUrl, idioma = "es") {
   // Traducción del texto
   let translatedText = texto;
-  if (idioma !== "es") {
-    try {
-      const result = await translate(texto, { to: idioma });
-      translatedText = result.text;
-    } catch (error) {
-      console.error("Error al traducir el texto:", error);
-    }
+  try {
+    const result = await translate(texto, { to: idioma });
+    translatedText = result.text;
+  } catch (error) {
+    console.error("Error al traducir el texto:", error);
   }
 
   // Crear archivo de audio
@@ -132,6 +150,11 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
     }
   }
 
+  // Preparamos el canvas para medir texto
+  const canvas = createCanvas(800, 600);
+  const ctx = canvas.getContext("2d");
+  ctx.font = "36px Arial"; // Misma fuente que usaremos en FFmpeg
+
   let videoParts = [];
 
   for (let i = 0; i < sentences.length; i++) {
@@ -140,92 +163,88 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
     const tuberIndex = i % tuberPaths.length;
     const tuberPath = tuberPaths[tuberIndex];
 
+    // Dividimos el texto en múltiples líneas
+    const maxTextWidth = 700; // Ancho máximo para subtítulos
+    const wrappedText = wrapText(ctx, sentences[i], maxTextWidth);
+    const escapedText = wrappedText.replace(/:/g, "\\:").replace(/'/g, "\\'");
+
+    // Calcular número de líneas para ajustar la posición
+    const lineCount = wrappedText.split("\n").length;
+    const lineHeight = 50; // Altura aproximada por línea (36px font + 14px spacing)
+
     await new Promise((resolve, reject) => {
-      const ff = ffmpeg()
-        .input(downloadedPath)
-        .inputOptions(isAnimated ? [] : ["-loop 1"])
-        .input(tuberPath)
-        .inputOptions(["-loop 1"]);
+      const ff = ffmpeg().input(downloadedPath).input(tuberPath);
 
       // Definir los filtros como un array de objetos
-      const filters = [
-        {
-          filter: "scale",
-          options: "300:-1",
-          inputs: "1:v",
-          outputs: "tuber",
-        },
-      ];
+      const filters = [];
 
-      // Añadir filtro diferente según si es animado o no
+      // Procesar imagen principal (agregar loop si es estática)
+      let mainInput = "0:v";
       if (!isAnimated) {
         filters.push({
-          filter: "zoompan",
-          options: {
-            z: "min(zoom+0.001,1.2)",
-            d: duration,
-            x: "iw/2-(iw/zoom/2)",
-            y: "ih/2-(ih/zoom/2)",
-            s: "800x600",
-          },
-          inputs: "0:v",
-          outputs: "zoomed",
+          filter: "loop",
+          options: "loop=-1:size=1",
+          inputs: mainInput,
+          outputs: "looped_main",
         });
-        filters.push({
-          filter: "overlay",
-          options: {
-            x: 500,
-            y: 300,
-          },
-          inputs: ["zoomed", "tuber"],
-          outputs: "with_tuber",
-        });
-      } else {
-        filters.push({
-          filter: "scale",
-          options: "800:600",
-          inputs: "0:v",
-          outputs: "scaled",
-        });
-        filters.push({
-          filter: "overlay",
-          options: {
-            x: 500,
-            y: 300,
-          },
-          inputs: ["scaled", "tuber"],
-          outputs: "with_tuber",
-        });
+        mainInput = "looped_main";
       }
 
-      // Añadir el texto
+      // Escalar tuber
+      filters.push({
+        filter: "scale",
+        options: "300:-1",
+        inputs: "1:v",
+        outputs: "tuber",
+      });
+
+      // Escalar imagen principal
+      filters.push({
+        filter: "scale",
+        options: "800:600",
+        inputs: mainInput,
+        outputs: "scaled",
+      });
+
+      // Overlay (ajustar posición del tuber)
+      filters.push({
+        filter: "overlay",
+        options: {
+          x: 500,
+          y: 200, // Mover tuber hacia arriba para dar espacio a subtítulos
+        },
+        inputs: ["scaled", "tuber"],
+        outputs: "with_tuber",
+      });
+
+      // Añadir el texto en la parte inferior
       filters.push({
         filter: "drawtext",
         options: {
-          fontfile: "C\\:/Windows/Fonts/arial.ttf", // Ruta de fuente válida en Windows
-          text: sentences[i].replace(/:/g, "\\:").replace(/'/g, "\\'"),
+          fontfile: "C\\:/Windows/Fonts/arial.ttf",
+          text: escapedText,
           fontcolor: "white",
           fontsize: 36,
           box: 1,
           boxcolor: "black@0.5",
           boxborderw: 10,
           x: "(w-text_w)/2",
-          y: "h-(text_h*2)",
+          y: "h - text_h - 20", // Posición fija en la parte inferior
+          line_spacing: 15,
         },
         inputs: "with_tuber",
         outputs: "out",
       });
 
-      // Aplicar los filtros - SOLUCIÓN CLAVE AQUÍ
+      // Aplicar los filtros
       ff.complexFilter(filters)
         .outputOptions([
-          "-map [out]", // Solo un mapeo!
+          "-map [out]",
           "-pix_fmt yuv420p",
           "-r 30",
           "-c:v libx264",
         ])
         .duration(duration)
-        .on("start", (command) => console.log("Ejecutando:", command))
         .on("error", (err, stdout, stderr) => {
           console.error("Error en FFmpeg:", err);
           console.error("Salida FFmpeg:", stdout);
