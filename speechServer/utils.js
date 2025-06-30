@@ -28,7 +28,6 @@ export async function isGif(url) {
     const response = await axios.head(url);
     return response.headers["content-type"] === "image/gif";
   } catch (error) {
-    console.error("Error checking if URL is GIF:", error);
     return false;
   }
 }

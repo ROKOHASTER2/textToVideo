@@ -138,7 +138,7 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
       filters.push({
         filter: "drawtext",
         options: {
-          fontfile: "C\\:/Windows/Fonts/arial.ttf",
+          font: "DejaVu Sans",
           text: escapedText,
           fontcolor: "white",
           fontsize: 36,
