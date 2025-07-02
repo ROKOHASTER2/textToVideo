@@ -69,7 +69,7 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
   // Preparamos el canvas para medir texto
   const canvas = createCanvas(800, 600);
   const ctx = canvas.getContext("2d");
-  ctx.font = "36px Arial";
+  ctx.font = "36px Dejavu Sans";
 
   let videoParts = [];
   const sentences = splitTextIntoSentences(texto);
@@ -85,7 +85,8 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
     const maxTextWidth = 700;
     const translatedSentence = await translateText(sentences[i], idioma);
     const wrappedText = wrapText(ctx, translatedSentence, maxTextWidth);
-    const escapedText = wrappedText.replace(/:/g, "\\:").replace(/'/g, "\\'");
+    const textWithNewlines = wrappedText; // Ya contiene \n reales
+    const escapedText = escapeForDrawtext(textWithNewlines);
 
     await new Promise((resolve, reject) => {
       const ff = isAnimated
@@ -112,7 +113,7 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
         filter: "scale",
         options: "300:-1",
         inputs: "1:v",
-        outputs: "tuber",
+        outputs: "tuber_scaled",
       });
 
       // Escalar imagen principal
@@ -120,25 +121,25 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
         filter: "scale",
         options: "800:600",
         inputs: mainInput,
-        outputs: "scaled",
+        outputs: "main_scaled",
       });
 
-      // Overlay
+      // Overlay del tuber
       filters.push({
         filter: "overlay",
         options: {
           x: 500,
           y: 200,
         },
-        inputs: ["scaled", "tuber"],
+        inputs: ["main_scaled", "tuber_scaled"],
         outputs: "with_tuber",
       });
 
-      // Añadir texto
+      // En el filtro drawtext:
       filters.push({
         filter: "drawtext",
         options: {
-          font: "DejaVu Sans",
+          font: "Dejavu Sans",
           text: escapedText,
           fontcolor: "white",
           fontsize: 36,
@@ -150,13 +151,12 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
           line_spacing: 15,
         },
         inputs: "with_tuber",
-        outputs: "out",
       });
 
       // Aplicar filtros
       ff.complexFilter(filters)
         .outputOptions([
-          "-map [out]",
+          "-map 0:v", // Mapeamos la salida nombrada
           "-pix_fmt yuv420p",
           "-r 30",
           "-c:v libx264",
@@ -244,4 +244,11 @@ export async function generateVideoFromJSON(
       : originalText;
 
   return await generateVideo(truncatedText, heritageData.image, langToUse);
+}
+
+// SI CAMBIA ALGO DE ESTO la version en aleman o en frances EXPLOTAN
+function escapeForDrawtext(text) {
+  return text
+    .replace(/\\/g, "\\\\") // Escapa backslashes
+    .replace(/:/g, "\\:"); // Escapa dos puntos
 }

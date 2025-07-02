@@ -68,21 +68,41 @@ export async function isAnimatedGif(filePath) {
 export function wrapText(context, text, maxWidth) {
   const words = text.split(" ");
   const lines = [];
-  let currentLine = words[0];
+  let currentLine = "";
 
-  for (let i = 1; i < words.length; i++) {
+  for (let i = 0; i < words.length; i++) {
     const word = words[i];
-    const testLine = currentLine + " " + word;
+    const testLine = currentLine ? currentLine + " " + word : word;
     const metrics = context.measureText(testLine);
 
     if (metrics.width < maxWidth) {
       currentLine = testLine;
     } else {
-      lines.push(currentLine);
-      currentLine = word;
+      // Manejar palabra muy larga
+      if (currentLine === "" && context.measureText(word).width >= maxWidth) {
+        // Dividir palabra en caracteres
+        let segmentedWord = "";
+        for (let j = 0; j < word.length; j++) {
+          const testChar = segmentedWord + word[j];
+          if (context.measureText(testChar).width >= maxWidth) {
+            lines.push(segmentedWord);
+            segmentedWord = word[j];
+          } else {
+            segmentedWord = testChar;
+          }
+        }
+        lines.push(segmentedWord);
+      } else {
+        lines.push(currentLine);
+        currentLine = word;
+      }
     }
   }
-  lines.push(currentLine);
+
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
   return lines.join("\n");
 }
 
