@@ -56,19 +56,32 @@ export async function getAudioBuffer(texto, idioma = "es") {
   }
 
   // Generar audio para cada fragmento
-  const audioUrls = await Promise.all(
-    finalChunks.map((chunk) =>
-      tts.getAudioUrl(chunk, { lang: idioma, slow: false })
-    )
-  );
+  let audioUrls;
+  try {
+    audioUrls = await Promise.all(
+      finalChunks.map((chunk) =>
+        tts.getAudioUrl(chunk, { lang: idioma, slow: false })
+      )
+    );
+  } catch (error) {
+    console.error(
+      "[getAudioBuffer] Error al generar URLs de audio:",
+      error.message
+    );
+    return Buffer.from([]); // Buffer vacío si falla
+  }
 
   // Descargar y combinar los buffers de audio
   const audioBuffers = await Promise.all(
-    audioUrls.map((url) =>
-      axios
-        .get(url, { responseType: "arraybuffer" })
-        .then((res) => Buffer.from(res.data))
-    )
+    audioUrls.map(async (url, index) => {
+      try {
+        const res = await axios.get(url, { responseType: "arraybuffer" });
+        return Buffer.from(res.data);
+      } catch (error) {
+        console.log("error en audiobuffers");
+        return Buffer.from([]);
+      }
+    })
   );
 
   return Buffer.concat(audioBuffers);
@@ -77,9 +90,12 @@ export async function getAudioBuffer(texto, idioma = "es") {
 export async function getAudioDuration(filePath) {
   return new Promise((resolve) => {
     ffmpeg.ffprobe(filePath, (err, metadata) => {
-      if (err || !metadata.format.duration) {
-        console.error("Error al obtener duración del audio:", err);
-        resolve(5); // Duración por defecto si hay error
+      if (err || !metadata.format?.duration) {
+        console.error(
+          "Error al obtener duración del audio:",
+          err?.message || err
+        );
+        resolve(5); // Valor por defecto si hay error
       } else {
         resolve(metadata.format.duration);
       }

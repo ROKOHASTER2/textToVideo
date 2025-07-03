@@ -28,6 +28,7 @@ export async function isGif(url) {
     const response = await axios.head(url);
     return response.headers["content-type"] === "image/gif";
   } catch (error) {
+    console.log("error en isGif");
     return false;
   }
 }
@@ -35,12 +36,23 @@ export async function isGif(url) {
 export async function downloadFile(url, dest) {
   await ensureTempDir();
   const writer = fs.createWriteStream(dest);
-  const response = await axios({ url, method: "GET", responseType: "stream" });
-  response.data.pipe(writer);
-  return new Promise((resolve, reject) => {
-    writer.on("finish", resolve);
-    writer.on("error", reject);
-  });
+
+  try {
+    const response = await axios({
+      url,
+      method: "GET",
+      responseType: "stream",
+    });
+    response.data.pipe(writer);
+
+    return new Promise((resolve, reject) => {
+      writer.on("finish", resolve);
+      writer.on("error", reject);
+    });
+  } catch (error) {
+    console.log("error en downloadFile");
+    return false;
+  }
 }
 
 export async function isAnimatedGif(filePath) {
@@ -60,7 +72,7 @@ export async function isAnimatedGif(filePath) {
           (stream.duration && parseFloat(stream.duration) > 0))
     );
   } catch (error) {
-    console.error("Error al verificar GIF animado:", error);
+    console.error("Error al verificar GIF animado:", error.message);
     return false;
   }
 }

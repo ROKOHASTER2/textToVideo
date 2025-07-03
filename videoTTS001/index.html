@@ -117,6 +117,14 @@
         width: auto;
         padding: 8px 12px;
       }
+      .multi-json-input {
+        height: 300px;
+      }
+      .json-count {
+        margin-top: 5px;
+        font-size: 14px;
+        color: #666;
+      }
     </style>
   </head>
   <body>
@@ -127,6 +135,9 @@
         Modo Manual
       </button>
       <button class="tab-btn" onclick="openTab('jsonTab')">Modo JSON</button>
+      <button class="tab-btn" onclick="openTab('multiJsonTab')">
+        Múltiples JSON
+      </button>
     </div>
 
     <!-- Modo Manual -->
@@ -210,6 +221,46 @@
       </div>
     </div>
 
+    <!-- Modo Múltiples JSON -->
+    <div id="multiJsonTab" class="tab-content">
+      <div class="form-group">
+        <label for="multiJsonInput"
+          >Array JSON de patrimonios culturales:</label
+        >
+        <textarea
+          id="multiJsonInput"
+          class="multi-json-input"
+          placeholder='Pega aquí el array completo (ej: [{"identifier":18,"name":"...","description":{"local":{"extended":"..."}},"image":"..."}, {...}])'
+        ></textarea>
+        <div id="jsonCount" class="json-count">0 items cargados</div>
+      </div>
+
+      <div class="form-group">
+        <label>Vista previa del primer item:</label>
+        <div id="multiJsonPreview" class="json-preview">
+          No hay JSON cargado
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="multiJsonLanguage">Idioma para el audio:</label>
+        <select id="multiJsonLanguage">
+          <option value="es">Español</option>
+          <option value="en">Inglés</option>
+          <option value="fr">Francés</option>
+          <option value="de">Alemán</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="multiTargetLength">Longitud del contenido:</label>
+        <select id="multiTargetLength">
+          <option value="extended">Extendido (descripción completa)</option>
+          <option value="short">Corto (resumen breve)</option>
+        </select>
+      </div>
+    </div>
+
     <div class="form-group">
       <label for="apiUrl">URL del API (servidor de generación):</label>
       <input
@@ -223,6 +274,9 @@
     <button id="generateBtn">Generar Video</button>
     <button id="generateFromJsonBtn" style="display: none">
       Generar desde JSON
+    </button>
+    <button id="generateMultiFromJsonBtn" style="display: none">
+      Generar Múltiples Videos
     </button>
 
     <div id="status" class="status" style="display: none"></div>
@@ -332,6 +386,8 @@
           tabId === "manualTab" ? "block" : "none";
         document.getElementById("generateFromJsonBtn").style.display =
           tabId === "jsonTab" ? "block" : "none";
+        document.getElementById("generateMultiFromJsonBtn").style.display =
+          tabId === "multiJsonTab" ? "block" : "none";
       }
 
       // Función para buscar por identifier
@@ -385,6 +441,39 @@
           }
         });
 
+      // Actualizar vista previa del JSON múltiple
+      function updateMultiJsonPreview() {
+        const input = document.getElementById("multiJsonInput").value;
+        const preview = document.getElementById("multiJsonPreview");
+        const count = document.getElementById("jsonCount");
+
+        try {
+          if (!input.trim()) {
+            preview.textContent = "No hay JSON cargado";
+            count.textContent = "0 items cargados";
+            return;
+          }
+
+          const jsonArray = JSON.parse(input);
+
+          if (!Array.isArray(jsonArray)) {
+            throw new Error("Debe ser un array de objetos JSON");
+          }
+
+          // Mostrar el primer item como vista previa
+          if (jsonArray.length > 0) {
+            preview.textContent = JSON.stringify(jsonArray[0], null, 2);
+          } else {
+            preview.textContent = "Array vacío";
+          }
+
+          count.textContent = `${jsonArray.length} items cargados`;
+        } catch (e) {
+          preview.textContent = "JSON inválido: " + e.message;
+          count.textContent = "0 items cargados";
+        }
+      }
+
       // Generación desde modo manual
       document
         .getElementById("generateBtn")
@@ -394,6 +483,16 @@
       document
         .getElementById("generateFromJsonBtn")
         .addEventListener("click", generateFromJson);
+
+      // Generación desde múltiples JSON
+      document
+        .getElementById("generateMultiFromJsonBtn")
+        .addEventListener("click", generateMultiFromJson);
+
+      // Configurar event listener para el input de múltiples JSON
+      document
+        .getElementById("multiJsonInput")
+        .addEventListener("input", updateMultiJsonPreview);
 
       async function generateVideo() {
         const texto = document.getElementById("texto").value;
@@ -436,6 +535,47 @@
           });
         } catch (error) {
           showStatus("Error en JSON: " + error.message, "error");
+        }
+      }
+
+      async function generateMultiFromJson() {
+        const apiUrl = document.getElementById("apiUrl").value;
+        const targetLanguage =
+          document.getElementById("multiJsonLanguage").value;
+        const targetLength = document.getElementById("multiTargetLength").value;
+        const jsonInput = document.getElementById("multiJsonInput").value;
+
+        try {
+          if (!jsonInput.trim()) {
+            throw new Error("Por favor ingresa el array JSON");
+          }
+
+          const heritageDataArray = JSON.parse(jsonInput);
+
+          if (!Array.isArray(heritageDataArray)) {
+            throw new Error("El JSON debe ser un array de objetos");
+          }
+
+          if (heritageDataArray.length === 0) {
+            throw new Error("El array no puede estar vacío");
+          }
+
+          // Validar cada objeto en el array
+          for (const item of heritageDataArray) {
+            if (!item.description?.local?.extended || !item.image) {
+              throw new Error(
+                "Cada item debe contener description.local.extended e image"
+              );
+            }
+          }
+
+          await sendRequest(apiUrl + "-multiJSON", {
+            heritageDataArray: heritageDataArray,
+            targetLanguage: targetLanguage,
+            targetLength: targetLength,
+          });
+        } catch (error) {
+          showStatus("Error: " + error.message, "error");
         }
       }
 
