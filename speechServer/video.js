@@ -2,7 +2,6 @@ import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "@ffmpeg-installer/ffmpeg";
 import { createCanvas } from "canvas";
 import path from "path";
-import fs from "fs/promises";
 import {
   downloadFile,
   isGif,
@@ -13,57 +12,35 @@ import {
   ensureTempDir,
   readFile,
   unlink,
-} from "./utils.js";
-import { getAudioBuffer, getAudioDuration } from "./audio.js";
-import {
+  validateImageFile,
+  downloadAndValidateImage,
+  escapeForDrawtext,
+  pngTubers,
+  DEFAULT_IMAGE_URL,
   splitTextIntoSentences,
   calculateDurations,
   translateText,
-} from "./subtitulos.js";
+} from "./utils.js";
+import { getAudioBuffer, getAudioDuration } from "./audio.js";
 
+// Configura la ruta de FFmpeg
 ffmpeg.setFfmpegPath(ffmpegPath.path);
 
-// PNG Tuber URLs
-const pngTubers = [
-  "https://facturacion-electronica.ec/wp-content/uploads/2019/04/scratching_head_pc_800_clr_2723.png",
-  "https://pbs.twimg.com/media/BqQ5S0iCQAACkRA.png",
-];
-
-// Default image URL
-const DEFAULT_IMAGE_URL =
-  "https://res.cloudinary.com/worldpackers/image/upload/c_limit,f_auto,q_auto,w_1140/ywx1rgzx6zwpavg3db1f";
-
-async function validateImageFile(filePath) {
-  try {
-    const stats = await fs.stat(filePath);
-    if (stats.size === 0) {
-      throw new Error("Empty file");
-    }
-    return true;
-  } catch (error) {
-    await unlink(filePath).catch(() => {});
-    throw error;
-  }
-}
-
-async function downloadAndValidateImage(imageUrl, outputPath) {
-  try {
-    await downloadFile(imageUrl, outputPath);
-    await validateImageFile(outputPath);
-    return true;
-  } catch (error) {
-    await unlink(outputPath).catch(() => {});
-    throw error;
-  }
-}
-
+/**
+ * Función principal que genera un video con texto, imagen de fondo y audio
+ * @param {string} texto - Texto a convertir en audio y subtítulos
+ * @param {string} imageUrl - URL de la imagen de fondo (opcional)
+ * @param {string} idioma - Código de idioma para el audio (default: "es")
+ * @returns {Promise<string>} Video en formato base64
+ */
 export async function generateVideo(texto, imageUrl, idioma = "es") {
+  // Asegura que exista el directorio temporal
   await ensureTempDir();
 
-  // Use default image if none provided
+  // Usa imagen por defecto si no se proporciona una
   let finalImageUrl = imageUrl || DEFAULT_IMAGE_URL;
 
-  // Download PNG tubers
+  // Descarga los avatares PNG (tubers)
   const tuberPaths = [];
   for (let i = 0; i < pngTubers.length; i++) {
     const tuberPath = path.join(tempDir, `tuber_${i}_${Date.now()}.png`);
@@ -71,16 +48,16 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
       await downloadAndValidateImage(pngTubers[i], tuberPath);
       tuberPaths.push(tuberPath);
     } catch (error) {
-      console.error(`Error downloading tuber ${pngTubers[i]}:`, error);
-      // Continue with available tubers
+      console.error(`Error descargando tuber ${pngTubers[i]}:`, error);
     }
   }
 
+  // Verifica que se hayan descargado tubers válidos
   if (tuberPaths.length === 0) {
-    throw new Error("No valid tuber images could be downloaded");
+    throw new Error("No se pudieron descargar imágenes de tuber válidas");
   }
 
-  // Create audio file
+  // Crea el archivo de audio a partir del texto
   const audioBuf = await getAudioBuffer(texto, idioma);
   const audioPath = path.join(
     tempDir,
@@ -89,13 +66,14 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
   await writeFile(audioPath, audioBuf);
   const totalDuration = await getAudioDuration(audioPath);
 
-  // Handle main image download and processing
+  // Maneja la descarga y procesamiento de la imagen principal
   let downloadedPath;
   let isGifFormat = false;
   let isAnimated = false;
   let attempts = 0;
   const maxAttempts = 2;
 
+  // Intenta descargar la imagen con reintentos
   while (attempts < maxAttempts) {
     attempts++;
     try {
@@ -107,45 +85,50 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
 
       await downloadAndValidateImage(finalImageUrl, downloadedPath);
 
+      // Verifica si el GIF es animado
       if (isGifFormat) {
         isAnimated = await isAnimatedGif(downloadedPath);
       }
-      break; // Success
+      break;
     } catch (error) {
       console.warn(
-        `Attempt ${attempts} failed for image ${finalImageUrl}:`,
+        `Intento ${attempts} fallido para imagen ${finalImageUrl}:`,
         error.message
       );
+      // Si falla, usa la imagen por defecto
       if (attempts >= maxAttempts) {
-        console.warn("Falling back to default image");
+        console.warn("Usando imagen por defecto");
         finalImageUrl = DEFAULT_IMAGE_URL;
-        attempts = 0; // Reset attempts for default image
+        attempts = 0;
       }
     }
   }
 
-  // Prepare canvas for text measurement
+  // Prepara el canvas para medir el texto
   const canvas = createCanvas(800, 600);
   const ctx = canvas.getContext("2d");
   ctx.font = "36px Sans";
 
   let videoParts = [];
+  // Divide el texto en oraciones para los subtítulos
   const sentences = splitTextIntoSentences(texto);
+  // Calcula la duración de cada oración
   const sentenceDurations = calculateDurations(sentences, totalDuration);
 
-  // Process each sentence
+  // Procesa cada oración para crear segmentos de video
   for (let i = 0; i < sentences.length; i++) {
     const outputVid = path.join(tempDir, `clip_${i}_${Date.now()}.mp4`);
     const duration = sentenceDurations[i];
+    // Selecciona un pngtuber alternado
     const tuberIndex = i % tuberPaths.length;
     const tuberPath = tuberPaths[tuberIndex];
 
-    // Wrap text
-    const maxTextWidth = 700;
+    // Procesa el texto: traduce, ajusta y escapa para FFmpeg
     const translatedSentence = await translateText(sentences[i], idioma);
-    const wrappedText = wrapText(ctx, translatedSentence, maxTextWidth);
+    const wrappedText = wrapText(ctx, translatedSentence, 700); // 700px de ancho máximo
     const escapedText = escapeForDrawtext(wrappedText);
 
+    // Genera el segmento de video usando FFmpeg
     await new Promise((resolve, reject) => {
       const ff = isAnimated
         ? ffmpeg()
@@ -156,7 +139,7 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
       ff.input(tuberPath);
       const filters = [];
 
-      // Process main image
+      // Procesa imagen principal
       let mainInput = "0:v";
       if (!isAnimated) {
         filters.push({
@@ -168,7 +151,7 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
         mainInput = "looped_main";
       }
 
-      // Scale tuber
+      // Escala el tuber
       filters.push({
         filter: "scale",
         options: "300:-1",
@@ -176,7 +159,7 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
         outputs: "tuber_scaled",
       });
 
-      // Scale main image
+      // Escala la imagen principal
       filters.push({
         filter: "scale",
         options: "800:600",
@@ -184,7 +167,7 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
         outputs: "main_scaled",
       });
 
-      // Tuber overlay
+      // Superpone el tuber
       filters.push({
         filter: "overlay",
         options: {
@@ -195,7 +178,7 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
         outputs: "with_tuber",
       });
 
-      // Add text
+      // Añade texto
       filters.push({
         filter: "drawtext",
         options: {
@@ -213,7 +196,7 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
         inputs: "with_tuber",
       });
 
-      // Apply filters
+      // Aplica los filtros y guarda el segmento
       ff.complexFilter(filters)
         .outputOptions([
           "-map 0:v",
@@ -223,7 +206,7 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
         ])
         .duration(duration)
         .on("error", (err, stdout, stderr) => {
-          console.error("FFmpeg error:", err);
+          console.error("Error FFmpeg:", err);
           console.error("FFmpeg stdout:", stdout);
           console.error("FFmpeg stderr:", stderr);
           reject(err);
@@ -235,7 +218,7 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
     videoParts.push({ path: outputVid, dur: duration });
   }
 
-  // Concatenate videos
+  // Concatena todos los segmentos de video
   const concatPath = path.join(tempDir, `concat-${Date.now()}.txt`);
   const concatTxt = videoParts.map((f) => `file '${f.path}'`).join("\n");
   await writeFile(concatPath, concatTxt);
@@ -251,7 +234,7 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
       .on("error", rej);
   });
 
-  // Combine with audio
+  // Combina el video con el audio
   const finalVid = path.join(tempDir, `final-${Date.now()}.mp4`);
   await new Promise((res, rej) => {
     ffmpeg()
@@ -263,11 +246,11 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
       .on("error", rej);
   });
 
-  // Convert to base64
+  // Convierte a base64 para la respuesta
   const vidBuf = await readFile(finalVid);
   const b64 = vidBuf.toString("base64");
 
-  // Cleanup
+  // Limpieza de archivos temporales
   const toRemove = [
     audioPath,
     concatPath,
@@ -280,46 +263,55 @@ export async function generateVideo(texto, imageUrl, idioma = "es") {
 
   await Promise.all(
     toRemove.map((p) =>
-      unlink(p).catch((e) => console.error(`Error deleting ${p}:`, e))
+      unlink(p).catch((e) => console.error(`Error borrando ${p}:`, e))
     )
   );
 
   return b64;
 }
 
+/**
+ * Genera video a partir de datos JSON de patrimonio cultural
+ * @param {Object} heritageData - Datos del patrimonio cultural
+ * @param {string} targetLanguage - Idioma objetivo ("en" o "local")
+ * @param {string} length - Longitud del texto a usar ("short", "medium", etc.)
+ * @returns {Promise<string>} Video en base64
+ */
 export async function generateVideoFromJSON(
   heritageData,
   targetLanguage = "en",
   length
 ) {
-  // Verify target language
+  // Determina el idioma a usar
   const langToUse = targetLanguage === "local" ? "es" : targetLanguage;
 
+  // Obtiene el texto según la longitud solicitada
   const originalText = heritageData.description.local[length];
 
+  // Limita la longitud del texto para evitar problemas
   const maxLength = 130000;
   const truncatedText =
     originalText.length > maxLength
       ? originalText.substring(0, maxLength) + "..."
       : originalText;
 
-  // Clean image URL if needed
+  // Procesa la URL de la imagen
   let imageToUse = heritageData.image || DEFAULT_IMAGE_URL;
   if (imageToUse.includes("?")) {
     imageToUse = imageToUse.split("?")[0];
   }
 
+  // Genera el video final
   return await generateVideo(truncatedText, imageToUse, langToUse);
 }
 
-// SI CAMBIA ALGO DE ESTO la version en aleman o en frances EXPLOTAN
-// (NO BORRAR)
-function escapeForDrawtext(text) {
-  return text
-    .replace(/\\/g, "\\\\") // Escapa backslashes
-    .replace(/:/g, "\\:"); // Escapa dos puntos
-}
-
+/**
+ * Genera un video combinado a partir de múltiples elementos de patrimonio
+ * @param {Array} heritageDataArray - Array de datos de patrimonio
+ * @param {string} targetLanguage - Idioma objetivo
+ * @param {string} length - Longitud del texto
+ * @returns {Promise<string>} Video combinado en base64
+ */
 export async function generateMultiVideoFromJSON(
   heritageDataArray,
   targetLanguage = "en",
@@ -330,7 +322,7 @@ export async function generateMultiVideoFromJSON(
   let finalPath;
 
   try {
-    // Generate each video
+    // Genera cada video individual
     for (let i = 0; i < heritageDataArray.length; i++) {
       const heritageData = heritageDataArray[i];
       const videoBase64 = await generateVideoFromJSON(
@@ -339,18 +331,19 @@ export async function generateMultiVideoFromJSON(
         length
       );
 
+      // Guarda cada video en archivo temporal
       const videoBuffer = Buffer.from(videoBase64, "base64");
       const videoPath = path.join(tempDir, `part_${i}_${Date.now()}.mp4`);
       await writeFile(videoPath, videoBuffer);
       videoPaths.push(videoPath);
     }
 
-    // Create concat file
+    // Crea archivo de concatenación para FFmpeg
     concatPath = path.join(tempDir, `multi_concat_${Date.now()}.txt`);
     const concatContent = videoPaths.map((p) => `file '${p}'`).join("\n");
     await writeFile(concatPath, concatContent);
 
-    // Concatenate videos
+    // Combina todos los videos
     finalPath = path.join(tempDir, `final_multi_${Date.now()}.mp4`);
     await new Promise((resolve, reject) => {
       ffmpeg()
@@ -362,18 +355,18 @@ export async function generateMultiVideoFromJSON(
         .on("error", reject);
     });
 
-    // Read final video
+    // Convierte a base64
     const finalBuffer = await readFile(finalPath);
     return finalBuffer.toString("base64");
   } finally {
-    // Cleanup
+    // Limpieza de archivos temporales
     const cleanUpFiles = [...videoPaths];
     if (concatPath) cleanUpFiles.push(concatPath);
     if (finalPath) cleanUpFiles.push(finalPath);
 
     await Promise.all(
       cleanUpFiles.map((file) =>
-        unlink(file).catch((e) => console.error(`Error deleting ${file}:`, e))
+        unlink(file).catch((e) => console.error(`Error borrando ${file}:`, e))
       )
     );
   }

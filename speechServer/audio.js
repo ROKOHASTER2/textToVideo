@@ -2,8 +2,7 @@ import tts from "google-tts-api";
 import axios from "axios";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "@ffmpeg-installer/ffmpeg";
-import { ensureTempDir, tempDir, writeFile } from "./utils.js";
-import { translateText } from "./subtitulos.js";
+import { ensureTempDir, tempDir, writeFile, translateText } from "./utils.js";
 import { promisify } from "util";
 import fs from "fs";
 
