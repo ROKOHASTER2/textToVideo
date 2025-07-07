@@ -11,42 +11,54 @@
         margin: 0 auto;
         padding: 20px;
         line-height: 1.6;
+        background-color: #f9f9f9;
       }
       h1 {
         color: #2c3e50;
         text-align: center;
+        margin-bottom: 30px;
       }
       .form-group {
-        margin-bottom: 15px;
+        margin-bottom: 20px;
+        background-color: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
       }
       label {
         display: block;
-        margin-bottom: 5px;
+        margin-bottom: 8px;
         font-weight: bold;
+        color: #2c3e50;
       }
       input,
       textarea,
       select {
         width: 100%;
-        padding: 8px;
+        padding: 12px;
         border: 1px solid #ddd;
-        border-radius: 4px;
+        border-radius: 6px;
         box-sizing: border-box;
+        font-size: 16px;
+        margin-bottom: 10px;
       }
       textarea {
-        height: 100px;
+        height: 150px;
         resize: vertical;
+        font-family: monospace;
       }
       button {
         background-color: #3498db;
         color: white;
         border: none;
-        padding: 10px 15px;
-        border-radius: 4px;
+        padding: 14px 20px;
+        border-radius: 6px;
         cursor: pointer;
         font-size: 16px;
+        font-weight: bold;
         width: 100%;
-        margin-bottom: 10px;
+        margin-top: 10px;
+        transition: background-color 0.3s;
       }
       button:hover {
         background-color: #2980b9;
@@ -56,40 +68,59 @@
         cursor: not-allowed;
       }
       #videoContainer {
-        margin-top: 20px;
+        margin-top: 30px;
         text-align: center;
+        display: none;
       }
       #videoResult {
-        max-width: 100%;
-        background-color: #000;
+        width: 100%;
+        max-width: 600px;
+        border-radius: 8px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
       }
       .status {
-        margin-top: 10px;
-        padding: 10px;
-        border-radius: 4px;
+        margin-top: 20px;
+        padding: 15px;
+        border-radius: 6px;
+        font-size: 16px;
       }
       .success {
         background-color: #d4edda;
         color: #155724;
+        border: 1px solid #c3e6cb;
       }
       .error {
         background-color: #f8d7da;
         color: #721c24;
+        border: 1px solid #f5c6cb;
       }
       .loading {
-        color: #0c5460;
         background-color: #d1ecf1;
+        color: #0c5460;
+        border: 1px solid #bee5eb;
       }
       .tab-buttons {
         display: flex;
-        margin-bottom: 15px;
+        margin-bottom: 20px;
+        gap: 10px;
       }
       .tab-btn {
         flex: 1;
-        margin-right: 5px;
+        padding: 12px;
+        background-color: #f0f0f0;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: bold;
+        transition: all 0.3s;
       }
-      .tab-btn:last-child {
-        margin-right: 0;
+      .tab-btn:hover {
+        background-color: #e0e0e0;
+      }
+      .tab-btn.active {
+        background-color: #3498db;
+        color: white;
       }
       .tab-content {
         display: none;
@@ -97,33 +128,60 @@
       .tab-content.active {
         display: block;
       }
-      .json-preview {
+      .preview {
         background: #f5f5f5;
-        padding: 10px;
-        border-radius: 4px;
+        padding: 15px;
+        border-radius: 6px;
         max-height: 200px;
         overflow-y: auto;
         font-family: monospace;
         white-space: pre-wrap;
+        margin-top: 15px;
+        border: 1px solid #eee;
       }
-      .search-container {
+      .identifier-list {
         display: flex;
-        gap: 5px;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
       }
-      .search-container input {
-        flex: 1;
-      }
-      .search-container button {
-        width: auto;
-        padding: 8px 12px;
-      }
-      .multi-json-input {
-        height: 300px;
-      }
-      .json-count {
-        margin-top: 5px;
+      .identifier-item {
+        background: #e3f2fd;
+        padding: 8px 15px;
+        border-radius: 20px;
         font-size: 14px;
-        color: #666;
+        display: flex;
+        align-items: center;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      }
+      .remove-identifier {
+        background: none;
+        border: none;
+        color: #e74c3c;
+        cursor: pointer;
+        margin-left: 8px;
+        font-weight: bold;
+        font-size: 16px;
+      }
+      .identifier-input {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 15px;
+      }
+      #addIdentifierBtn {
+        width: auto;
+        padding: 8px 20px;
+        margin-top: 0;
+      }
+      .required {
+        color: #e74c3c;
+      }
+
+      #videoTitle {
+        font-size: 22px;
+        font-weight: bold;
+        margin-bottom: 15px;
+        color: #2c3e50;
       }
     </style>
   </head>
@@ -134,25 +192,25 @@
       <button class="tab-btn active" onclick="openTab('manualTab')">
         Modo Manual
       </button>
-      <button class="tab-btn" onclick="openTab('jsonTab')">Modo JSON</button>
-      <button class="tab-btn" onclick="openTab('multiJsonTab')">
-        Múltiples JSON
+      <button class="tab-btn" onclick="openTab('identifiersTab')">
+        Modo Identificadores
       </button>
     </div>
 
     <!-- Modo Manual -->
     <div id="manualTab" class="tab-content active">
       <div class="form-group">
-        <label for="texto">Texto a convertir en voz:</label>
+        <label for="texto"
+          >Texto a convertir en voz: <span class="required">*</span></label
+        >
         <textarea
           id="texto"
           placeholder="Escribe el texto que quieres convertir en voz..."
+          required
         ></textarea>
-      </div>
 
-      <div class="form-group">
-        <label for="idioma">Idioma:</label>
-        <select id="idioma">
+        <label for="idioma">Idioma: <span class="required">*</span></label>
+        <select id="idioma" required>
           <option value="es">Español</option>
           <option value="en">Inglés</option>
           <option value="fr">Francés</option>
@@ -163,469 +221,95 @@
           <option value="ja">Japonés</option>
           <option value="zh">Chino</option>
         </select>
-      </div>
 
-      <div class="form-group">
-        <label for="imageUrl">URL de la imagen de fondo:</label>
+        <label for="imageUrl"
+          >URL de la imagen de fondo: <span class="required">*</span></label
+        >
         <input
           type="text"
           id="imageUrl"
           placeholder="https://ejemplo.com/imagen.jpg"
+          required
         />
       </div>
     </div>
 
-    <!-- Modo JSON -->
-    <div id="jsonTab" class="tab-content">
+    <!-- Modo Identificadores -->
+    <div id="identifiersTab" class="tab-content">
       <div class="form-group">
-        <label for="searchIdentifier">Buscar por ID:</label>
-        <div class="search-container">
-          <input
-            type="number"
-            id="searchIdentifier"
-            placeholder="Ingresa el ID a buscar"
-          />
-          <button onclick="searchByIdentifier()">Buscar</button>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label for="jsonInput">JSON del patrimonio cultural:</label>
-        <textarea
-          id="jsonInput"
-          placeholder='Pega aquí el JSON completo (ej: {"identifier":18,"name":"...","description":{"local":{"extended":"..."}},"image":"..."})'
-        ></textarea>
-      </div>
-
-      <div class="form-group">
-        <label>Vista previa del JSON:</label>
-        <div id="jsonPreview" class="json-preview">No hay JSON cargado</div>
-      </div>
-
-      <div class="form-group">
-        <label for="jsonLanguage">Idioma para el audio:</label>
-        <select id="jsonLanguage">
-          <option value="es">Español</option>
-          <option value="en">Inglés</option>
-          <option value="fr">Francés</option>
-          <option value="de">Alemán</option>
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label for="targetLength">Longitud del contenido:</label>
-        <select id="targetLength">
-          <option value="extended">Extendido (descripción completa)</option>
-          <option value="short">Corto (resumen breve)</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- Modo Múltiples JSON -->
-    <div id="multiJsonTab" class="tab-content">
-      <div class="form-group">
-        <label for="multiJsonInput"
-          >Array JSON de patrimonios culturales:</label
+        <label for="heritageJson"
+          >JSON completo de patrimonios: <span class="required">*</span></label
         >
         <textarea
-          id="multiJsonInput"
-          class="multi-json-input"
-          placeholder='Pega aquí el array completo (ej: [{"identifier":18,"name":"...","description":{"local":{"extended":"..."}},"image":"..."}, {...}])'
+          id="heritageJson"
+          placeholder='Pega aquí el JSON completo (ej: [{"identifier":18,"name":"...","description":{...},"image":"..."}, ...])'
+          required
         ></textarea>
-        <div id="jsonCount" class="json-count">0 items cargados</div>
-      </div>
 
-      <div class="form-group">
-        <label>Vista previa del primer item:</label>
-        <div id="multiJsonPreview" class="json-preview">
-          No hay JSON cargado
+        <div class="identifier-input">
+          <input
+            type="number"
+            id="newIdentifier"
+            placeholder="Ingresa un ID (ej: 18, 1404, 2007)"
+          />
+          <button id="addIdentifierBtn">Añadir ID</button>
         </div>
-      </div>
 
-      <div class="form-group">
-        <label for="multiJsonLanguage">Idioma para el audio:</label>
-        <select id="multiJsonLanguage">
+        <label>Identificadores seleccionados:</label>
+        <div id="identifierList" class="identifier-list"></div>
+
+        <label for="identifiersLanguage"
+          >Idioma para el audio: <span class="required">*</span></label
+        >
+        <select id="identifiersLanguage" required>
           <option value="es">Español</option>
           <option value="en">Inglés</option>
           <option value="fr">Francés</option>
           <option value="de">Alemán</option>
+          <option value="ko">Coreano</option>
+          <option value="ja">Japonés</option>
         </select>
-      </div>
 
-      <div class="form-group">
-        <label for="multiTargetLength">Longitud del contenido:</label>
-        <select id="multiTargetLength">
+        <label for="identifiersTargetLength"
+          >Longitud del contenido: <span class="required">*</span></label
+        >
+        <select id="identifiersTargetLength" required>
           <option value="extended">Extendido (descripción completa)</option>
           <option value="short">Corto (resumen breve)</option>
         </select>
+
+        <label>Vista previa de datos:</label>
+        <div id="selectedIdentifiersPreview" class="preview">
+          No hay identificadores seleccionados
+        </div>
       </div>
     </div>
 
     <div class="form-group">
-      <label for="apiUrl">URL del API (servidor de generación):</label>
+      <label for="apiUrl"
+        >URL del API (servidor de generación):
+        <span class="required">*</span></label
+      >
       <input
         type="text"
         id="apiUrl"
-        placeholder="http://localhost:3000/video"
         value="http://localhost:3000/video"
+        required
       />
     </div>
 
-    <button id="generateBtn">Generar Video</button>
-    <button id="generateFromJsonBtn" style="display: none">
-      Generar desde JSON
-    </button>
-    <button id="generateMultiFromJsonBtn" style="display: none">
-      Generar Múltiples Videos
+    <button id="generateManualBtn">Generar Video (Modo Manual)</button>
+    <button id="generateIdentifiersBtn">
+      Generar Video (Modo Identificadores)
     </button>
 
     <div id="status" class="status" style="display: none"></div>
 
     <div id="videoContainer" style="display: none">
-      <h2>Resultado:</h2>
+      <div id="videoTitle">Tu video generado</div>
       <video id="videoResult" controls></video>
     </div>
 
-    <script>
-      // Datos de ejemplo
-      const heritageData = [
-        {
-          identifier: 18,
-          name: "Suwon Hwaseong Fortress",
-          latitude: 37.2811,
-          longitude: 127.0157,
-          image:
-            "https://eu2.contabostorage.com/7fb97413b6c243adb4347dafa02551a9:ocity/heritage/images/1733934352393_hwaseong_fortress.png",
-          addressProvince: "Gyeonggi Province",
-          addressLocality: "Suwon",
-          addressCountry: "KR",
-          type: "Cultural",
-          description: {
-            local: {
-              short:
-                "Hwaseong Haenggung Palace is the largest temporary palace in Korea, with a total of 576 spaces, and it has beauty and grandeur.",
-              extended:
-                "정조는 1789년 10월, 아버지 사도세자의 무덤인 현륭원을 옮긴 이후 1800년(정조 24년) 1월까지 12년간 13차례에 걸쳐 수원행차를 거행했으며, 이때마다 화성행궁에 머물렀습니다. 1795년에는 화성행궁 봉수당에서 어머니 혜경궁 홍씨의 환갑을 기념하는 진찬연을 여는 등 여러 가지 행사를 거행하였습니다. 화성행궁은 평상시에는 화성유수부 유수가 집무하는 관청으로도 활용되었습니다. 그러나, 일제강점기 이후 갖가지 용도의 건물로 이용되면서, 그 모습을 잃게 되었습니다. 화성축성 200주년인 1996년부터 복원 공사를 시작해 2003년 일반인에게 공개하였습니다.",
-            },
-            english: {
-              short:
-                "Hwaseong Haenggung Palace is the largest temporary palace in Korea, with a total of 576 spaces, and it features beauty and grandeur.",
-              extended:
-                "After moving Hyeonryungwon, the tomb of his father, Crown Prince Sado, in October 1789, Jeongjo held 13 trips to Suwon for 12 years until January 1800, and each time he stayed at Hwaseong Haenggung Palace. In 1795, various events were held at Hwaseong Haenggung, including a banquet to commemorate the 60th birthday of his mother Hyegyeonggung Hong. The palace was also used as a government office. During the Japanese colonial period, it was repurposed for other uses and lost its appearance. Restoration began in 1996 and the palace reopened in 2003.",
-            },
-          },
-        },
-        {
-          identifier: 2007,
-          name: "Mirador del Mediterráneo",
-          latitude: 39.08487017422064,
-          longitude: -0.24853563658447264,
-          image:
-            "https://eu2.contabostorage.com/7fb97413b6c243adb4347dafa02551a9:ocity/heritage/images/bc86271253d17348dc4a84d5990675468218939b1719412247.jpg",
-          addressProvince: "Valencia",
-          addressLocality: "Tavernes de la Valldigna",
-          addressCountry: "ES",
-          type: "Natural",
-          description: {
-            local: {
-              short:
-                "Desde el llamado Mirador del Mediterráneo o de la Valldigna se divisa el paisaje agrario actual, ribeteado por el mar.",
-              extended:
-                "Desde el llamado Mirador del Mediterráneo o de la Valldigna se divisa el paisaje agrario actual, ribeteado por el mar. Los arrozales de antaño dieron paso a los huertos de naranjos a mediados del siglo XX. Hoy conviven el azul del mar, el pardo de la marjal y el verde de los árboles. Este paisaje forma parte de la 'Ruta del Racó de Joana', situada en Tavernes de la Valldigna, un tesoro de belleza natural y biodiversidad. El sendero serpentea a través de colinas y vegetación autóctona, ofreciendo vistas espectaculares. Alberga especies como encinas, romeros, tomillos, águilas, zorros y más.",
-            },
-            english: {
-              short:
-                "From the so-called Mirador del Mediterráneo or Mirador de la Valldigna you can see the current agricultural landscape, bordered by the sea.",
-              extended:
-                "From the so-called Mirador del Mediterráneo or Mirador de la Valldigna you can see the current agricultural landscape, bordered by the sea. The rice fields of yesteryear gave way to orange groves in the mid-20th century. Today, the blue of the sea coexists with the brown of the marshland and the green of the trees. This landscape is part of the well-known 'Ruta del Racó de Joana' in Tavernes de la Valldigna, a treasure of natural beauty and biodiversity. The trail winds through lush landscapes filled with native flora and fauna, offering an immersive hiking experience.",
-            },
-          },
-        },
-        {
-          identifier: 1404,
-          name: "La Casa de la Cultura",
-          latitude: 39.739598493506705,
-          longitude: -0.27137924407615976,
-          image:
-            "https://eu2.contabostorage.com/7fb97413b6c243adb4347dafa02551a9:ocity/heritage/images/8b984d247f407596e96cbb67db03d28514aaec441664443977.png",
-          addressProvince: "Valencia",
-          addressLocality: "Quart de les Valls",
-          addressCountry: "ES",
-          type: "Cultural",
-          description: {
-            local: {
-              short:
-                "Se trata de una iglesia asentada sobre un templo primitivo gótico que sería ampliado en el siglo XVIII.",
-              extended:
-                "Edificio de interés histórico-cultural, clasificado como Monumento Histórico Artístico Nacional. Antiguamente iglesia de San Miguel (siglo XVII), fue restaurada en los 80 y transformada en la Casa de Cultura. Conserva su estructura original con nave central, capillas laterales, coro alto y campanario.",
-            },
-            english: {
-              short:
-                "This is a church built over a primitive Gothic temple that was enlarged in the 18th century.",
-              extended:
-                "A building of historic-cultural interest, classified as a National Historic-Artistic Monument. Formerly the Church of San Miguel (17th century), it was restored in the 1980s and converted into the Casa de Cultura. It preserves the original structure, with a central nave, side chapels, upper choir, and bell tower.",
-            },
-          },
-        },
-      ];
-
-      // Manejo de pestañas
-      function openTab(tabId) {
-        document.querySelectorAll(".tab-content").forEach((tab) => {
-          tab.classList.remove("active");
-        });
-        document.querySelectorAll(".tab-btn").forEach((btn) => {
-          btn.classList.remove("active");
-        });
-
-        document.getElementById(tabId).classList.add("active");
-        event.currentTarget.classList.add("active");
-
-        // Mostrar el botón correcto
-        document.getElementById("generateBtn").style.display =
-          tabId === "manualTab" ? "block" : "none";
-        document.getElementById("generateFromJsonBtn").style.display =
-          tabId === "jsonTab" ? "block" : "none";
-        document.getElementById("generateMultiFromJsonBtn").style.display =
-          tabId === "multiJsonTab" ? "block" : "none";
-      }
-
-      // Función para buscar por identifier
-      function findObjectByIdentifier(jsonArray, identifier) {
-        return jsonArray.find((obj) => obj.identifier === identifier);
-      }
-
-      // Función para manejar la búsqueda
-      function searchByIdentifier() {
-        const identifierInput = document.getElementById("searchIdentifier");
-        const identifier = parseInt(identifierInput.value);
-
-        if (isNaN(identifier)) {
-          showStatus("Por favor ingresa un ID válido", "error");
-          identifierInput.focus();
-          return;
-        }
-
-        const foundObject = findObjectByIdentifier(heritageData, identifier);
-
-        if (foundObject) {
-          const jsonString = JSON.stringify(foundObject, null, 2);
-          document.getElementById("jsonInput").value = jsonString;
-          document.getElementById("jsonPreview").textContent = jsonString;
-          showStatus(`Objeto con ID ${identifier} encontrado`, "success");
-        } else {
-          showStatus(
-            `No se encontró ningún objeto con ID ${identifier}`,
-            "error"
-          );
-          document.getElementById("jsonInput").value = "";
-          document.getElementById("jsonPreview").textContent =
-            "No hay JSON cargado";
-        }
-      }
-
-      // Vista previa del JSON
-      document
-        .getElementById("jsonInput")
-        .addEventListener("input", function () {
-          try {
-            const json = JSON.parse(this.value);
-            document.getElementById("jsonPreview").textContent = JSON.stringify(
-              json,
-              null,
-              2
-            );
-          } catch (e) {
-            document.getElementById("jsonPreview").textContent =
-              "JSON inválido: " + e.message;
-          }
-        });
-
-      // Actualizar vista previa del JSON múltiple
-      function updateMultiJsonPreview() {
-        const input = document.getElementById("multiJsonInput").value;
-        const preview = document.getElementById("multiJsonPreview");
-        const count = document.getElementById("jsonCount");
-
-        try {
-          if (!input.trim()) {
-            preview.textContent = "No hay JSON cargado";
-            count.textContent = "0 items cargados";
-            return;
-          }
-
-          const jsonArray = JSON.parse(input);
-
-          if (!Array.isArray(jsonArray)) {
-            throw new Error("Debe ser un array de objetos JSON");
-          }
-
-          // Mostrar el primer item como vista previa
-          if (jsonArray.length > 0) {
-            preview.textContent = JSON.stringify(jsonArray[0], null, 2);
-          } else {
-            preview.textContent = "Array vacío";
-          }
-
-          count.textContent = `${jsonArray.length} items cargados`;
-        } catch (e) {
-          preview.textContent = "JSON inválido: " + e.message;
-          count.textContent = "0 items cargados";
-        }
-      }
-
-      // Generación desde modo manual
-      document
-        .getElementById("generateBtn")
-        .addEventListener("click", generateVideo);
-
-      // Generación desde JSON
-      document
-        .getElementById("generateFromJsonBtn")
-        .addEventListener("click", generateFromJson);
-
-      // Generación desde múltiples JSON
-      document
-        .getElementById("generateMultiFromJsonBtn")
-        .addEventListener("click", generateMultiFromJson);
-
-      // Configurar event listener para el input de múltiples JSON
-      document
-        .getElementById("multiJsonInput")
-        .addEventListener("input", updateMultiJsonPreview);
-
-      async function generateVideo() {
-        const texto = document.getElementById("texto").value;
-        const idioma = document.getElementById("idioma").value;
-        const imageUrl = document.getElementById("imageUrl").value;
-        const apiUrl = document.getElementById("apiUrl").value;
-
-        if (!texto || !imageUrl) {
-          showStatus("Por favor completa todos los campos", "error");
-          return;
-        }
-
-        await sendRequest(apiUrl, {
-          texto: texto,
-          idioma: idioma,
-          imageUrl: imageUrl,
-        });
-      }
-
-      async function generateFromJson() {
-        const apiUrl = document.getElementById("apiUrl").value;
-        const targetLanguage = document.getElementById("jsonLanguage").value;
-        const targetLength = document.getElementById("targetLength").value;
-
-        try {
-          const jsonData = JSON.parse(
-            document.getElementById("jsonInput").value
-          );
-
-          if (!jsonData.description?.local?.extended || !jsonData.image) {
-            throw new Error(
-              "El JSON debe contener description.local.extended e image"
-            );
-          }
-
-          await sendRequest(apiUrl + "-from-json", {
-            heritageData: jsonData,
-            targetLanguage: targetLanguage,
-            targetLength: targetLength,
-          });
-        } catch (error) {
-          showStatus("Error en JSON: " + error.message, "error");
-        }
-      }
-
-      async function generateMultiFromJson() {
-        const apiUrl = document.getElementById("apiUrl").value;
-        const targetLanguage =
-          document.getElementById("multiJsonLanguage").value;
-        const targetLength = document.getElementById("multiTargetLength").value;
-        const jsonInput = document.getElementById("multiJsonInput").value;
-
-        try {
-          if (!jsonInput.trim()) {
-            throw new Error("Por favor ingresa el array JSON");
-          }
-
-          const heritageDataArray = JSON.parse(jsonInput);
-
-          if (!Array.isArray(heritageDataArray)) {
-            throw new Error("El JSON debe ser un array de objetos");
-          }
-
-          if (heritageDataArray.length === 0) {
-            throw new Error("El array no puede estar vacío");
-          }
-
-          // Validar cada objeto en el array
-          for (const item of heritageDataArray) {
-            if (!item.description?.local?.extended || !item.image) {
-              throw new Error(
-                "Cada item debe contener description.local.extended e image"
-              );
-            }
-          }
-
-          await sendRequest(apiUrl + "-multiJSON", {
-            heritageDataArray: heritageDataArray,
-            targetLanguage: targetLanguage,
-            targetLength: targetLength,
-          });
-        } catch (error) {
-          showStatus("Error: " + error.message, "error");
-        }
-      }
-
-      async function sendRequest(url, body) {
-        const statusDiv = document.getElementById("status");
-        const videoContainer = document.getElementById("videoContainer");
-        const videoResult = document.getElementById("videoResult");
-        const generateBtn = document.querySelector(
-          'button:not([style*="display:none"])'
-        );
-
-        try {
-          // Mostrar estado de carga
-          generateBtn.disabled = true;
-          showStatus("Generando video...", "loading");
-          videoContainer.style.display = "none";
-
-          // Hacer la petición al servidor
-          const response = await fetch(url, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(body),
-          });
-
-          const data = await response.json();
-
-          if (!response.ok) {
-            throw new Error(data.error || "Error al generar el video");
-          }
-
-          // Mostrar el video resultante
-          videoResult.src = data.videoUrl;
-          videoContainer.style.display = "block";
-          showStatus("Video generado con éxito!", "success");
-        } catch (error) {
-          console.error("Error:", error);
-          showStatus(error.message, "error");
-        } finally {
-          generateBtn.disabled = false;
-        }
-      }
-
-      function showStatus(message, type) {
-        const statusDiv = document.getElementById("status");
-        statusDiv.textContent = message;
-        statusDiv.className = `status ${type}`;
-        statusDiv.style.display = "block";
-      }
-    </script>
+    <script src="script.js"></script>
   </body>
 </html>

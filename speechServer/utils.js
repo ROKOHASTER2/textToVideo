@@ -134,19 +134,25 @@ export function wrapText(context, text, maxWidth) {
   const lines = [];
   let currentLine = "";
 
+  // Reducir ligeramente el maxWidth para dar margen
+  const adjustedMaxWidth = maxWidth * 0.95; // 5% menos de ancho
+
   for (let i = 0; i < words.length; i++) {
     const word = words[i];
     const testLine = currentLine ? currentLine + " " + word : word;
     const metrics = context.measureText(testLine);
 
-    if (metrics.width < maxWidth) {
+    if (metrics.width < adjustedMaxWidth) {
       currentLine = testLine;
     } else {
-      if (currentLine === "" && context.measureText(word).width >= maxWidth) {
+      if (
+        currentLine === "" &&
+        context.measureText(word).width >= adjustedMaxWidth
+      ) {
         let segmentedWord = "";
         for (let j = 0; j < word.length; j++) {
           const testChar = segmentedWord + word[j];
-          if (context.measureText(testChar).width >= maxWidth) {
+          if (context.measureText(testChar).width >= adjustedMaxWidth) {
             lines.push(segmentedWord);
             segmentedWord = word[j];
           } else {
