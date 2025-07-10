@@ -1,229 +1,291 @@
-import React, { useState, useRef, useEffect } from 'react';
-import './styles.css';
-interface HeritageData {
-  description: {
-    local: {
-      short: string;
-      medium: string;
-      long?: string;
-    };
-  };
-  image?: string;
-}
+import React, { useState, useEffect, useRef } from 'react';
+import { useSpeech } from 'react-text-to-speech';
 
 const DEFAULT_IMAGE_URL = "https://res.cloudinary.com/worldpackers/image/upload/c_limit,f_auto,q_auto,w_1140/ywx1rgzx6zwpavg3db1f";
+
+// Array de imágenes de avatares (simulando PNG tubers)
 const PNG_TUBERS = [
   "https://facturacion-electronica.ec/wp-content/uploads/2019/04/scratching_head_pc_800_clr_2723.png",
   "https://pbs.twimg.com/media/BqQ5S0iCQAACkRA.png"
 ];
 
-const App: React.FC = () => {
-  const [heritageItems, setHeritageItems] = useState<HeritageData[]>([]);
-  const [language, setLanguage] = useState('es');
-  const [textLength, setTextLength] = useState<'short' | 'medium'>('medium');
+const App = () => {
+  const [text, setText] = useState('Texto de ejemplo. Este audio se sincronizará con la visualización.');
+  const [imageUrl, setImageUrl] = useState('');
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentContent, setCurrentContent] = useState<{
-    text: string;
-    image: string;
-    tuber: string;
-  } | null>(null);
-  const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
-  const currentIndexRef = useRef(0);
+  const [progress, setProgress] = useState(0);
+  const [currentTuber, setCurrentTuber] = useState(0);
+  const progressInterval = useRef<NodeJS.Timeout | null>(null);
+  
+  const { start, pause, stop } = useSpeech({ 
+    text: text,
+    lang: 'es'
+  });
 
-  // Procesar múltiples elementos de patrimonio
-  const processMultiHeritage = async (items: HeritageData[], lang: string, length: 'short' | 'medium') => {
-    setIsPlaying(true);
-    currentIndexRef.current = 0;
-    playNextItem(items, lang, length);
+  // Calcula duración estimada basada en cantidad de palabras
+  const calculateDuration = () => {
+    const words = text.split(' ').length;
+    const wordsPerSecond = 2; // Velocidad promedio de habla
+    return Math.max(words / wordsPerSecond, 3); // Mínimo 3 segundos
   };
 
-  // Reproducir el siguiente elemento
-  const playNextItem = (items: HeritageData[], lang: string, length: 'short' | 'medium') => {
-    if (currentIndexRef.current >= items.length) {
-      setIsPlaying(false);
-      return;
+  // Detecta puntos finales de frase para cambiar el PNG tuber
+  const detectSentenceEnds = (text: string) => {
+    const sentenceEnds = [];
+    let position = 0;
+    
+    // Buscar puntos, signos de interrogación y exclamación
+    const regex = /[.!?]/g;
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      sentenceEnds.push(match.index);
     }
-
-    const item = items[currentIndexRef.current];
-    const originalText = item.description.local[length];
-    const imageUrl = item.image || DEFAULT_IMAGE_URL;
-
-    // Traducir el texto (simulado - en producción usarías una API real)
-    translateText(originalText, lang).then(translatedText => {
-      setCurrentContent({
-        text: translatedText,
-        image: imageUrl,
-        tuber: PNG_TUBERS[currentIndexRef.current % PNG_TUBERS.length]
-      });
-
-      speakText(translatedText, lang, () => {
-        currentIndexRef.current++;
-        setTimeout(() => playNextItem(items, lang, length), 500);
-      });
-    });
+    
+    return sentenceEnds;
   };
 
-  // Sintetizar voz
-  const speakText = (text: string, lang: string, onEnd: () => void) => {
-    const sentences = splitSentences(text);
-    let sentenceIndex = 0;
-
-    const speakNextSentence = () => {
-      if (sentenceIndex >= sentences.length) {
-        onEnd();
-        return;
-      }
-
-      const sentence = sentences[sentenceIndex];
-      setCurrentContent(prev => prev ? { ...prev, text: sentence } : null);
-
-      speechRef.current = new SpeechSynthesisUtterance(sentence);
-      speechRef.current.lang = lang;
-      speechRef.current.onend = () => {
-        sentenceIndex++;
-        setTimeout(speakNextSentence, 300);
-      };
+  const handlePlay = () => {
+    const duration = calculateDuration();
+    const sentenceEnds = detectSentenceEnds(text);
+    setProgress(0);
+    setCurrentTuber(0);
+    
+    let elapsed = 0;
+    if (progressInterval.current) {
+      clearInterval(progressInterval.current);
+    }
+    
+    progressInterval.current = setInterval(() => {
+      elapsed += 0.1;
+      const currentProgress = Math.min((elapsed / duration) * 100, 100);
+      setProgress(currentProgress);
       
-      window.speechSynthesis.speak(speechRef.current);
-    };
-
-    speakNextSentence();
+      // Cambiar tuber al final de cada frase
+      const currentChar = Math.floor(text.length * currentProgress / 100);
+      sentenceEnds.forEach((endPos, index) => {
+        if (currentChar >= endPos && currentTuber === index % PNG_TUBERS.length) {
+          setCurrentTuber((index + 1) % PNG_TUBERS.length);
+        }
+      });
+    }, 100);
+    
+    start();
+    setIsPlaying(true);
   };
 
-  // Dividir texto en oraciones
-  const splitSentences = (text: string): string[] => {
-    return text.split(/(?<=[.!?])\s+/g)
-               .map(s => s.trim())
-               .filter(s => s.length > 0);
-  };
-
-  // Función de traducción simulada
-  const translateText = async (text: string, targetLang: string): Promise<string> => {
-    // En una implementación real, usarías una API de traducción
-    console.log(`Traduciendo a ${targetLang}: ${text.substring(0, 30)}...`);
-    return text; // Retorna el mismo texto como simulación
-  };
-
-  // Detener reproducción
-  const stopPlayback = () => {
-    if (speechRef.current) {
-      window.speechSynthesis.cancel();
-    }
+  const handlePause = () => {
+    pause();
     setIsPlaying(false);
+    if (progressInterval.current) {
+      clearInterval(progressInterval.current);
+    }
   };
 
-  // Ejemplo de carga de datos JSON
-  const loadExampleData = () => {
-    const exampleData: HeritageData[] = [
-      {
-        description: {
-          local: {
-            short: "La Catedral de Sevilla es la catedral gótica más grande del mundo.",
-            medium: "La Catedral de Sevilla, construida entre 1401 y 1506, es la catedral gótica más grande del mundo y alberga la tumba de Cristóbal Colón. Su campanario, la Giralda, es el antiguo alminar de la mezquita que ocupaba el lugar."
-          }
-        },
-        image: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/Catedral_de_Sevilla.jpg/800px-Catedral_de_Sevilla.jpg"
-      },
-      {
-        description: {
-          local: {
-            short: "La Alhambra es un palacio y fortaleza nazarí en Granada.",
-            medium: "La Alhambra es un complejo palaciego y fortaleza situado en Granada, España. Fue residencia de los monarcas nazaríes y destaca por su arquitectura islámica, patios y decoración. El Generalife, con sus jardines, forma parte del conjunto."
-          }
-        },
-        image: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Alhambra_from_Albaicin.jpg/800px-Alhambra_from_Albaicin.jpg"
-      }
-    ];
-    setHeritageItems(exampleData);
+  const handleStop = () => {
+    stop();
+    setIsPlaying(false);
+    setProgress(0);
+    setCurrentTuber(0);
+    if (progressInterval.current) {
+      clearInterval(progressInterval.current);
+    }
   };
 
-  // Limpiar al desmontar
   useEffect(() => {
     return () => {
-      if (speechRef.current) {
-        window.speechSynthesis.cancel();
+      if (progressInterval.current) {
+        clearInterval(progressInterval.current);
       }
     };
   }, []);
 
   return (
-    <div className="app">
-      <h1>Generador de Videos MultiJSON</h1>
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: '100vh',
+      padding: '20px',
+      backgroundColor: '#f5f5f5',
+      fontFamily: 'Arial, sans-serif'
+    }}>
+      <h2 style={{ marginBottom: '30px' }}>Simulador Audio-Visual</h2>
       
-      {!isPlaying ? (
-        <div className="controls">
-          <div className="language-selector">
-            <label>
-              Idioma:
-              <select value={language} onChange={(e) => setLanguage(e.target.value)}>
-                <option value="es">Español</option>
-                <option value="en">Inglés</option>
-                <option value="fr">Francés</option>
-              </select>
-            </label>
-            
-            <label>
-              Longitud del texto:
-              <select 
-                value={textLength} 
-                onChange={(e) => setTextLength(e.target.value as 'short' | 'medium')}
-              >
-                <option value="short">Corto</option>
-                <option value="medium">Medio</option>
-              </select>
-            </label>
+      <textarea 
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        style={{ 
+          width: '80%',
+          maxWidth: '600px',
+          height: '120px',
+          padding: '15px',
+          marginBottom: '20px',
+          borderRadius: '8px',
+          border: '1px solid #ddd',
+          fontSize: '16px'
+        }}
+        placeholder="Escribe el texto a convertir en audio..."
+      />
+      
+      <div style={{ marginBottom: '20px', width: '60%', maxWidth: '500px' }}>
+        <label style={{
+          display: 'block',
+          marginBottom: '8px',
+          fontWeight: 'bold'
+        }}>
+          URL de la imagen:
+        </label>
+        <input
+          type="url"
+          value={imageUrl}
+          onChange={(e) => setImageUrl(e.target.value)}
+          placeholder="Pega la URL de tu imagen aquí"
+          style={{
+            width: '100%',
+            padding: '10px',
+            border: '1px solid #ddd',
+            borderRadius: '4px',
+            fontSize: '14px'
+          }}
+        />
+      </div>
+      
+      {/* Visualizador simulado */}
+      <div style={{
+        width: '60%',
+        maxWidth: '500px',
+        height: '300px',
+        position: 'relative',
+        marginBottom: '20px',
+        borderRadius: '8px',
+        overflow: 'hidden',
+        boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+        backgroundColor: '#000'
+      }}>
+        <img 
+          src={imageUrl || DEFAULT_IMAGE_URL}
+          alt="Fondo"
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            position: 'absolute',
+            opacity: isPlaying ? 1 : 0.7,
+            filter: isPlaying ? 'brightness(1)' : 'brightness(0.7)',
+            transition: 'all 0.3s ease'
+          }}
+          onError={(e) => {
+            e.currentTarget.src = DEFAULT_IMAGE_URL;
+          }}
+        />
+        
+        {/* Simulación de PNG tuber */}
+        {isPlaying && (
+          <img 
+            src={PNG_TUBERS[currentTuber]}
+            alt="Avatar"
+            style={{
+              position: 'absolute',
+              right: '50px',
+              bottom: '50px',
+              width: '150px',
+              height: '150px',
+              objectFit: 'contain',
+              filter: 'drop-shadow(0 0 8px rgba(0,0,0,0.5))',
+              transition: 'all 0.5s ease'
+            }}
+          />
+        )}
+        
+        {/* Barra de progreso */}
+        <div style={{
+          position: 'absolute',
+          bottom: '0',
+          left: '0',
+          right: '0',
+          height: '4px',
+          backgroundColor: 'rgba(255,255,255,0.3)'
+        }}>
+          <div style={{
+            width: `${progress}%`,
+            height: '100%',
+            backgroundColor: '#4285f4',
+            transition: 'width 0.1s linear'
+          }} />
+        </div>
+        
+        {/* Texto simulado (subtítulos) */}
+        {isPlaying && (
+          <div style={{
+            position: 'absolute',
+            bottom: '20px',
+            left: '0',
+            right: '0',
+            padding: '10px',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            color: 'white',
+            textAlign: 'center',
+            fontSize: '16px'
+          }}>
+            {text.substring(0, Math.floor(text.length * progress / 100))}
           </div>
-          
-          <div className="data-section">
-            <button onClick={loadExampleData}>Cargar Datos de Ejemplo</button>
-            <div className="json-preview">
-              {heritageItems.map((item, index) => (
-                <div key={index} className="json-item">
-                  <h3>Elemento {index + 1}</h3>
-                  <p>{item.description.local[textLength].substring(0, 100)}...</p>
-                </div>
-              ))}
-            </div>
-          </div>
-          
+        )}
+      </div>
+      
+      {/* Controles */}
+      <div style={{ display: 'flex', gap: '15px' }}>
+        {!isPlaying ? (
           <button 
-            onClick={() => processMultiHeritage(heritageItems, language, textLength)}
-            disabled={heritageItems.length === 0}
+            onClick={handlePlay}
+            style={{
+              padding: '12px 25px',
+              backgroundColor: '#4285f4',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              fontSize: '16px',
+              cursor: 'pointer',
+              transition: 'background-color 0.3s'
+            }}
           >
-            Generar Video MultiJSON
+            Reproducir
           </button>
-        </div>
-      ) : (
-        <div className="player-container">
-          {currentContent && (
-            <div className="video-preview">
-              <img 
-                src={currentContent.image} 
-                alt="Background" 
-                className="background" 
-                onError={(e) => {
-                  e.currentTarget.src = DEFAULT_IMAGE_URL;
-                }}
-              />
-              
-              <div className="tuber-container">
-                <img 
-                  src={currentContent.tuber} 
-                  alt="PNG Tuber" 
-                  className="tuber"
-                  onError={(e) => e.currentTarget.src = PNG_TUBERS[0]}
-                />
-              </div>
-              
-              <div className="subtitles">
-                {currentContent.text}
-              </div>
-            </div>
-          )}
-          
-          <button onClick={stopPlayback}>Detener</button>
-        </div>
-      )}
+        ) : (
+          <>
+            <button 
+              onClick={handlePause}
+              style={{
+                padding: '12px 25px',
+                backgroundColor: '#fbbc05',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                fontSize: '16px',
+                cursor: 'pointer',
+                transition: 'background-color 0.3s'
+              }}
+            >
+              Pausar
+            </button>
+            <button 
+              onClick={handleStop}
+              style={{
+                padding: '12px 25px',
+                backgroundColor: '#ea4335',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                fontSize: '16px',
+                cursor: 'pointer',
+                transition: 'background-color 0.3s'
+              }}
+            >
+              Detener
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 };
