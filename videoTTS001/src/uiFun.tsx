@@ -1,190 +1,96 @@
-import React, { useState, useEffect, useRef } from "react";
-import { useSpeech } from "react-text-to-speech";
+import { useCallback, useEffect } from "react";
+import { useCtrlFun } from "./ctrlFun";
+import { useAudioFun } from "./audioFun";
+import { BgFun, PNG_TUBERS } from "./bgFun";
 
-const DEFAULT_IMAGE_URL =
-  "https://res.cloudinary.com/worldpackers/image/upload/c_limit,f_auto,q_auto,w_1140/ywx1rgzx6zwpavg3db1f";
-const PNG_TUBERS = [
-  "https://facturacion-electronica.ec/wp-content/uploads/2019/04/scratching_head_pc_800_clr_2723.png",
-  "https://pbs.twimg.com/media/BqQ5S0iCQAACkRA.png",
-];
+export const UiFun = () => {
+  const {
+    heritageItems,
+    currentItemIndex,
+    setCurrentItemIndex,
+    jsonInput,
+    setJsonInput,
+    jsonError,
+    descriptionLength,
+    setDescriptionLength,
+    testText,
+    setTestText,
+    testImageUrl,
+    setTestImageUrl,
+    currentItem,
+    loadHeritageFromJson,
+    prepareTestItem,
+    isAutoAdvancing,
+    safeAdvance,
+  } = useCtrlFun();
 
-interface HeritageDescription {
-  local: {
-    short: string;
-    extended: string;
-  };
-}
+  const {
+    isPlaying,
+    progress,
+    currentTuber,
+    displayText,
+    handlePlay: audioHandlePlay,
+    handleStop: audioHandleStop,
+  } = useAudioFun(currentItem, descriptionLength, safeAdvance);
 
-interface HeritageItem {
-  id: string;
-  name: string;
-  description: HeritageDescription;
-  imageUrl: string;
-}
+  const handlePlay = useCallback(() => {
+    isAutoAdvancing.current = true;
+    audioHandlePlay();
+  }, [audioHandlePlay]);
 
-const App = () => {
-  // Estados para gestión multi-heritage
-  const [heritageItems, setHeritageItems] = useState<HeritageItem[]>([]);
-  const [currentItemIndex, setCurrentItemIndex] = useState(0);
-  const [jsonInput, setJsonInput] = useState<string>("");
-  const [jsonError, setJsonError] = useState<string | null>(null);
-  const [descriptionLength, setDescriptionLength] = useState<
-    "short" | "extended"
-  >("extended");
+  const handleStop = useCallback(() => {
+    isAutoAdvancing.current = false;
+    audioHandleStop();
+  }, [audioHandleStop]);
 
-  // Campos para pruebas
-  const [testText, setTestText] = useState("");
-  const [testImageUrl, setTestImageUrl] = useState("");
-
-  // Estados principales
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [currentTuber, setCurrentTuber] = useState(0);
-  const progressInterval = useRef<NodeJS.Timeout | null>(null);
-  const autoAdvancing = useRef(false);
-
-  // Obtener el elemento actual
-  const currentItem = heritageItems[currentItemIndex] || {
-    id: "default",
-    name: "Patrimonio Cultural",
-    description: {
-      local: {
-        short: "Ingrese un JSON válido para comenzar",
-        extended: "Ingrese un JSON válido para comenzar",
-      },
-    },
-    imageUrl: "",
-  };
-
-  // Obtener texto a mostrar
-  const displayText = currentItem.description.local[descriptionLength];
-
-  // Función para cargar JSON
-  const loadHeritageFromJson = () => {
-    try {
-      setJsonError(null);
-      const parsedItems = JSON.parse(jsonInput);
-
-      if (!Array.isArray(parsedItems)) {
-        throw new Error("El JSON debe ser un array de objetos");
-      }
-
-      const validatedItems = parsedItems.map((item, index) => ({
-        id: item.identifier?.toString() || `item-${index}`,
-        name: item.name || `Patrimonio ${index + 1}`,
-        description: {
-          local: item.description?.local || { short: "", extended: "" },
-        },
-        imageUrl: item.image || "",
-      }));
-
-      setHeritageItems(validatedItems);
-      setCurrentItemIndex(0);
-    } catch (error: any) {
-      setJsonError(`Error en el JSON: ${error.message}`);
-      console.error("Error parsing JSON:", error);
-    }
-  };
-
-  // Configuración de TTS
-  const { start, stop, speechStatus } = useSpeech({
-    text: displayText,
-    lang: "es-ES",
-  });
-
-  // Reproducir automáticamente al cambiar de item
-  useEffect(() => {
-    if (autoAdvancing.current && heritageItems.length > 0) {
-      handlePlay();
-      autoAdvancing.current = false;
-    }
-  }, [currentItemIndex]);
-
-  // Manejar fin de reproducción y avanzar automáticamente
-  useEffect(() => {
-    setIsPlaying(speechStatus === "started");
-
-    if (speechStatus === "stopped" && progress === 100) {
-      if (currentItemIndex < heritageItems.length - 1) {
-        autoAdvancing.current = true;
-        setCurrentItemIndex(currentItemIndex + 1);
-      }
-    }
-  }, [speechStatus, progress]);
-
-  // Funciones de reproducción
-  const handlePlay = () => {
-    if (
-      !displayText.trim() ||
-      displayText === "Ingrese un JSON válido para comenzar"
-    ) {
-      alert("No hay contenido para reproducir");
-      return;
-    }
-
-    const duration = Math.max(displayText.split(" ").length / 2, 3);
-    const sentenceEnds = [...displayText.matchAll(/[.!?]/g)].map(
-      (m) => m.index!
+  const handlePrev = () => {
+    isAutoAdvancing.current = false;
+    setCurrentItemIndex((prev) =>
+      prev > 0 ? prev - 1 : heritageItems.length - 1
     );
-    setProgress(0);
-    setCurrentTuber(0);
-
-    progressInterval.current && clearInterval(progressInterval.current);
-
-    let elapsed = 0;
-    progressInterval.current = setInterval(() => {
-      elapsed += 0.1;
-      const currentProgress = Math.min((elapsed / duration) * 100, 100);
-      setProgress(currentProgress);
-
-      const currentChar = Math.floor(
-        (displayText.length * currentProgress) / 100
-      );
-      sentenceEnds.forEach((endPos, index) => {
-        if (
-          currentChar >= endPos &&
-          currentTuber === index % PNG_TUBERS.length
-        ) {
-          setCurrentTuber((index + 1) % PNG_TUBERS.length);
-        }
-      });
-    }, 100);
-
-    start();
   };
 
-  const handleStop = () => {
-    stop();
-    setProgress(0);
-    setCurrentTuber(0);
-    progressInterval.current && clearInterval(progressInterval.current);
+  const handleNext = () => {
+    isAutoAdvancing.current = false;
+    setCurrentItemIndex((prev) =>
+      prev < heritageItems.length - 1 ? prev + 1 : 0
+    );
   };
 
-  // Limpieza
+  // Efecto para manejar la reproducción automática
   useEffect(() => {
+    let timer: NodeJS.Timeout;
+
+    if (isPlaying && isAutoAdvancing.current) {
+      // Preparamos para el siguiente item cuando esté cerca del final
+      if (progress > 90) {
+        timer = setTimeout(() => {
+          if (isAutoAdvancing.current && heritageItems.length > 1) {
+            setCurrentItemIndex((prev) =>
+              prev < heritageItems.length - 1 ? prev + 1 : 0
+            );
+          }
+        }, 100);
+      }
+    }
+
     return () => {
-      progressInterval.current && clearInterval(progressInterval.current);
+      if (timer) clearTimeout(timer);
     };
-  }, []);
+  }, [progress, isPlaying, heritageItems.length]);
 
-  // Función para probar con texto e imagen personalizados
-  const handleTestPlay = () => {
-    const testItem = {
-      id: "test-item",
-      name: "Prueba personalizada",
-      description: {
-        local: {
-          short: testText,
-          extended: testText,
-        },
-      },
-      imageUrl: testImageUrl || DEFAULT_IMAGE_URL,
-    };
+  // Efecto para iniciar reproducción al cambiar de item
+  useEffect(() => {
+    if (isAutoAdvancing.current && heritageItems.length > 0) {
+      const timer = setTimeout(() => {
+        if (isAutoAdvancing.current) {
+          audioHandlePlay();
+        }
+      }, 100);
 
-    setHeritageItems([testItem]);
-    setCurrentItemIndex(0);
-    setTimeout(handlePlay, 100);
-  };
+      return () => clearTimeout(timer);
+    }
+  }, [currentItemIndex, heritageItems.length]);
 
   return (
     <div
@@ -284,7 +190,10 @@ const App = () => {
             }}
           />
           <button
-            onClick={handleTestPlay}
+            onClick={() => {
+              prepareTestItem();
+              setTimeout(handlePlay, 100);
+            }}
             style={{
               padding: "10px 15px",
               backgroundColor: "#34a853",
@@ -299,23 +208,49 @@ const App = () => {
         </div>
       </div>
 
-      {/* Selector de patrimonio actual */}
-      {heritageItems.length > 0 && (
-        <div style={{ width: "100%", maxWidth: "800px", marginBottom: "20px" }}>
-          <h3>Seleccionar patrimonio</h3>
-          <select
-            value={currentItemIndex}
-            onChange={(e) => setCurrentItemIndex(Number(e.target.value))}
-            style={{ width: "100%", padding: "10px" }}
-          >
-            {heritageItems.map((item, index) => (
-              <option key={item.id} value={index}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+      {/* Controles de navegación con emojis a los lados */}
+      <div
+        style={{
+          width: "100%",
+          maxWidth: "800px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: "20px",
+        }}
+      >
+        <button
+          onClick={handlePrev}
+          disabled={heritageItems.length === 0}
+          style={{
+            padding: "10px 15px",
+            fontSize: "20px",
+            backgroundColor: "transparent",
+            border: "none",
+            cursor: heritageItems.length === 0 ? "not-allowed" : "pointer",
+            opacity: heritageItems.length === 0 ? 0.5 : 1,
+          }}
+          title="Anterior"
+        >
+          ⬅️
+        </button>
+
+        <button
+          onClick={handleNext}
+          disabled={heritageItems.length === 0}
+          style={{
+            padding: "10px 15px",
+            fontSize: "20px",
+            backgroundColor: "transparent",
+            border: "none",
+            cursor: heritageItems.length === 0 ? "not-allowed" : "pointer",
+            opacity: heritageItems.length === 0 ? 0.5 : 1,
+          }}
+          title="Siguiente"
+        >
+          ➡️
+        </button>
+      </div>
 
       {/* Visualizador */}
       <div
@@ -330,18 +265,7 @@ const App = () => {
           boxShadow: "0 4px 8px rgba(0,0,0,0.2)",
         }}
       >
-        <img
-          src={currentItem.imageUrl || DEFAULT_IMAGE_URL}
-          alt="Background"
-          style={{
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            opacity: isPlaying ? 1 : 0.7,
-            transition: "opacity 0.3s",
-          }}
-          onError={(e) => (e.currentTarget.src = DEFAULT_IMAGE_URL)}
-        />
+        <BgFun currentItem={currentItem} isPlaying={isPlaying} />
 
         {isPlaying && (
           <>
@@ -420,7 +344,7 @@ const App = () => {
               fontWeight: "bold",
             }}
           >
-            Reproducir
+            ▶️ Reproducir
           </button>
         ) : (
           <button
@@ -436,12 +360,10 @@ const App = () => {
               cursor: "pointer",
             }}
           >
-            Detener
+            ⏹️ Detener
           </button>
         )}
       </div>
     </div>
   );
 };
-
-export default App;
