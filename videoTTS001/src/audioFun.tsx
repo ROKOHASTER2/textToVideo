@@ -2,38 +2,89 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useSpeech } from "react-text-to-speech";
 import type { HeritageItem } from "./ctrlFun";
 import { PNG_TUBERS } from "./bgFun";
+/*
+  Cada objeto debe tener las siguientes propiedades:
 
+  - identifier: ID numérico único del elemento.
+  - name: Nombre del lugar o elemento patrimonial.
+  - latitude / longitude: Coordenadas geográficas.
+  - image: URL de una imagen ilustrativa (no puede ser null).
+  - addressProvince / addressLocality / addressCountry: Información geográfica detallada.
+  - type: Tipo de patrimonio ("Cultural", "Natural" o "Intangible").
+  - description: Objeto con descripciones en dos idiomas:
+      - local: Descripción en el idioma original del lugar (campos 'short' y 'extended').
+      - english: Traducción al inglés (campos 'short' y 'extended').
+
+*/
+
+/**
+ * Hook personalizado para manejar la reproducción de audio y progreso visual
+ * @param currentItem - El elemento actual del patrimonio que contiene las descripciones
+ * @param descriptionLength - Longitud de la descripción a usar ('short' o 'extended')
+ * @param onNextRequested - Callback opcional para solicitar el siguiente elemento
+ * @returns Objeto con el estado y funciones de control de reproducción
+ */
 export const useAudioFun = (
   currentItem: HeritageItem,
   descriptionLength: "short" | "extended",
-  onNextRequested?: () => void // Nueva prop para solicitar el siguiente item
+  onNextRequested?: () => void
 ) => {
+  // Estado para controlar si el audio está reproduciéndose
   const [isPlaying, setIsPlaying] = useState(false);
+  // Estado para el progreso visual (0-100)
   const [progress, setProgress] = useState(0);
+  // Estado para la imagen actual del "tuber" (personaje) a mostrar
   const [currentTuber, setCurrentTuber] = useState(0);
-  const progressInterval = useRef<NodeJS.Timeout | null>(null);
+
+  // Refs para mantener valores entre renders sin causar rerenders
+  const progressInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number | null>(null);
-  const estimatedDurationRef = useRef<number>(0);
+  // Duración estimada para el progreso visual basado en conteo de palabras
+  const estimatedVisualDurationRef = useRef<number>(0);
+  // Callback para ejecutar cuando termina la reproducción
   const onFinishedCallback = useRef<(() => void) | null>(null);
 
+  // Obtiene el texto a mostrar según la longitud solicitada
   const displayText = currentItem.description.local[descriptionLength];
 
+  // Configuración del hook de texto a voz
   const { start, stop, speechStatus } = useSpeech({
     text: displayText,
     lang: "es-ES",
     onStop: () => {
+      // Se ejecuta cuando el audio termina naturalmente
       if (onFinishedCallback.current) {
         onFinishedCallback.current();
       }
-      // Llamar a la función para pasar al siguiente item
+      // Solicita el siguiente elemento si existe el callback
       if (onNextRequested) {
         onNextRequested();
       }
+      // Limpia el intervalo y completa el progreso
+      clearProgressInterval();
+      setProgress(100);
+      // Muestra la última imagen del tuber
+      setCurrentTuber(PNG_TUBERS.length - 1);
     },
   });
 
+  /**
+   * Limpia el intervalo de progreso si existe
+   */
+  const clearProgressInterval = () => {
+    if (progressInterval.current) {
+      clearInterval(progressInterval.current);
+      progressInterval.current = null;
+    }
+  };
+
+  /**
+   * Maneja la reproducción del audio
+   * @param onFinished - Callback opcional a ejecutar al terminar
+   */
   const handlePlay = useCallback(
     (onFinished?: () => void) => {
+      // Validación para texto vacío o no válido
       if (
         !displayText.trim() ||
         displayText === "Ingrese un JSON válido para comenzar"
@@ -42,88 +93,88 @@ export const useAudioFun = (
         return;
       }
 
+      // Guarda el callback para ejecutarlo al terminar
       onFinishedCallback.current = onFinished || null;
 
+      // Calcula duración estimada basada en conteo de palabras (2.5 palabras/segundo)
       const wordCount = displayText.split(/\s+/).length;
-      estimatedDurationRef.current = wordCount / 2.5;
-      startTimeRef.current = Date.now();
+      estimatedVisualDurationRef.current = wordCount / 2.5;
 
+      // Inicializa el tiempo de inicio y estados
+      startTimeRef.current = Date.now();
       setProgress(0);
       setCurrentTuber(0);
 
-      progressInterval.current && clearInterval(progressInterval.current);
+      // Limpia cualquier intervalo previo
+      clearProgressInterval();
 
+      // Configura un nuevo intervalo para actualizar el progreso visual
       progressInterval.current = setInterval(() => {
         if (!startTimeRef.current) return;
 
+        // Calcula el progreso basado en el tiempo transcurrido
         const elapsed = (Date.now() - startTimeRef.current) / 1000;
         const currentProgress = Math.min(
-          (elapsed / estimatedDurationRef.current) * 100,
+          (elapsed / estimatedVisualDurationRef.current) * 100,
           100
         );
         setProgress(currentProgress);
 
-        const currentChar = Math.floor(
-          (displayText.length * currentProgress) / 100
-        );
+        // Encuentra los finales de oración para cambiar la imagen del tuber
         const sentenceEnds = [...displayText.matchAll(/[.!?]/g)].map(
           (m) => m.index!
         );
+
+        // Cambia la imagen del tuber según el progreso en las oraciones
         sentenceEnds.forEach((endPos, index) => {
-          if (
-            currentChar >= endPos &&
-            currentTuber === index % PNG_TUBERS.length
-          ) {
+          if (currentProgress >= (endPos / displayText.length) * 100) {
             setCurrentTuber((index + 1) % PNG_TUBERS.length);
           }
         });
+      }, 100); // Actualiza cada 100ms
 
-        if (currentProgress >= 100) {
-          progressInterval.current && clearInterval(progressInterval.current);
-          if (onFinishedCallback.current) {
-            onFinishedCallback.current();
-          }
-        }
-      }, 100);
-
-      onFinishedCallback.current = onFinished || null;
+      // Inicia la reproducción del audio
       start();
     },
-    [displayText, currentTuber]
+    [displayText, start]
   );
 
+  /**
+   * Maneja la detención del audio
+   */
   const handleStop = useCallback(() => {
-    stop();
-    setProgress(0);
-    setCurrentTuber(0);
-    startTimeRef.current = null;
-    progressInterval.current && clearInterval(progressInterval.current);
-    onFinishedCallback.current = null;
+    stop(); // Detiene la reproducción
+    setProgress(0); // Reinicia el progreso
+    setCurrentTuber(0); // Vuelve al primer tuber
+    startTimeRef.current = null; // Limpia el tiempo de referencia
+    clearProgressInterval(); // Limpia el intervalo
+    onFinishedCallback.current = null; // Limpia el callback
   }, [stop]);
 
+  // Efecto para sincronizar el estado de reproducción con speechStatus
   useEffect(() => {
     setIsPlaying(speechStatus === "started");
 
     if (speechStatus === "stopped") {
-      if (progress >= 95 && onFinishedCallback.current) {
-        onFinishedCallback.current();
-      }
+      // Limpia cuando el audio se detiene
       startTimeRef.current = null;
-      progressInterval.current && clearInterval(progressInterval.current);
+      clearProgressInterval();
     }
-  }, [speechStatus, progress]);
+  }, [speechStatus]);
 
+  // Efecto de limpieza al desmontar el componente
   useEffect(() => {
     return () => {
-      progressInterval.current && clearInterval(progressInterval.current);
+      clearProgressInterval();
     };
   }, []);
 
+  // Retorna el estado y las funciones de control
   return {
     isPlaying,
     progress,
     currentTuber,
-    displayText,
+    displayText: displayText, // Texto completo para mostrar
     handlePlay,
     handleStop,
   };

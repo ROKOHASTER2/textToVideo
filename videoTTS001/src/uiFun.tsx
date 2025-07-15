@@ -1,9 +1,26 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { useCtrlFun } from "./ctrlFun";
 import { useAudioFun } from "./audioFun";
 import { BgFun, PNG_TUBERS } from "./bgFun";
 
+// Function to split text into sentences
+function splitTextIntoSentences(text: string): string[] {
+  if (!text) return [];
+  return text
+    .split(/(?<=[.!?])\s+/g)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+// Function to calculate display time for each sentence (ms)
+function calculateSentenceDuration(sentence: string): number {
+  // Base time + extra time per character
+  return 1500 + sentence.length * 50;
+}
+
+// Componente principal de la interfaz de usuario del simulador de patrimonio cultural
 export const UiFun = () => {
+  // Extracción de estados y funciones del hook de control
   const {
     heritageItems,
     currentItemIndex,
@@ -24,6 +41,12 @@ export const UiFun = () => {
     safeAdvance,
   } = useCtrlFun();
 
+  // Estados para el nuevo sistema de visualización de texto
+  const [sentences, setSentences] = useState<string[]>([]);
+  const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
+  const sentenceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Extracción de estados y funciones del hook de audio
   const {
     isPlaying,
     progress,
@@ -33,53 +56,85 @@ export const UiFun = () => {
     handleStop: audioHandleStop,
   } = useAudioFun(currentItem, descriptionLength, safeAdvance);
 
+  // Procesar el texto cuando cambia
+  useEffect(() => {
+    if (displayText) {
+      const newSentences = splitTextIntoSentences(displayText);
+      setSentences(newSentences);
+      setCurrentSentenceIndex(0);
+    } else {
+      setSentences([]);
+      setCurrentSentenceIndex(0);
+    }
+  }, [displayText]);
+
+  // Manejar la transición entre frases
+  useEffect(() => {
+    if (!isPlaying || sentences.length === 0) return;
+
+    // Limpiar timer anterior si existe
+    if (sentenceTimerRef.current) {
+      clearTimeout(sentenceTimerRef.current);
+    }
+
+    // Obtener la duración para la frase actual
+    const currentSentence = sentences[currentSentenceIndex];
+    const duration = calculateSentenceDuration(currentSentence);
+
+    // Configurar timer para la siguiente frase
+    sentenceTimerRef.current = setTimeout(() => {
+      setCurrentSentenceIndex((prev) => (prev + 1) % sentences.length);
+    }, duration);
+
+    // Limpiar al desmontar
+    return () => {
+      if (sentenceTimerRef.current) {
+        clearTimeout(sentenceTimerRef.current);
+      }
+    };
+  }, [isPlaying, sentences, currentSentenceIndex]);
+
+  // Manejo de reproducción con auto-avance
   const handlePlay = useCallback(() => {
     isAutoAdvancing.current = true;
     audioHandlePlay();
   }, [audioHandlePlay]);
 
+  // Manejo de detención con desactivación de auto-avance
   const handleStop = useCallback(() => {
     isAutoAdvancing.current = false;
     audioHandleStop();
+    // Limpiar timer al detener
+    if (sentenceTimerRef.current) {
+      clearTimeout(sentenceTimerRef.current);
+    }
   }, [audioHandleStop]);
 
+  // Navegación al item anterior
   const handlePrev = () => {
     isAutoAdvancing.current = false;
     setCurrentItemIndex((prev) =>
       prev > 0 ? prev - 1 : heritageItems.length - 1
     );
+    // Limpiar timer al cambiar
+    if (sentenceTimerRef.current) {
+      clearTimeout(sentenceTimerRef.current);
+    }
   };
 
+  // Navegación al siguiente item
   const handleNext = () => {
     isAutoAdvancing.current = false;
     setCurrentItemIndex((prev) =>
       prev < heritageItems.length - 1 ? prev + 1 : 0
     );
+    // Limpiar timer al cambiar
+    if (sentenceTimerRef.current) {
+      clearTimeout(sentenceTimerRef.current);
+    }
   };
 
-  // Efecto para manejar la reproducción automática
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-
-    if (isPlaying && isAutoAdvancing.current) {
-      // Preparamos para el siguiente item cuando esté cerca del final
-      if (progress > 90) {
-        timer = setTimeout(() => {
-          if (isAutoAdvancing.current && heritageItems.length > 1) {
-            setCurrentItemIndex((prev) =>
-              prev < heritageItems.length - 1 ? prev + 1 : 0
-            );
-          }
-        }, 100);
-      }
-    }
-
-    return () => {
-      if (timer) clearTimeout(timer);
-    };
-  }, [progress, isPlaying, heritageItems.length]);
-
-  // Efecto para iniciar reproducción al cambiar de item
+  // Efecto para reiniciar reproducción al cambiar de item cuando está activo el auto-avance
   useEffect(() => {
     if (isAutoAdvancing.current && heritageItems.length > 0) {
       const timer = setTimeout(() => {
@@ -106,7 +161,7 @@ export const UiFun = () => {
     >
       <h2 style={{ marginBottom: "30px" }}>Simulador de Patrimonio Cultural</h2>
 
-      {/* Selector de longitud */}
+      {/* Selector de longitud de descripción */}
       <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
         <select
           value={descriptionLength}
@@ -120,7 +175,7 @@ export const UiFun = () => {
         </select>
       </div>
 
-      {/* Entrada de JSON */}
+      {/* Sección para cargar datos JSON */}
       <div style={{ width: "100%", maxWidth: "800px", marginBottom: "20px" }}>
         <h3>Cargar datos de patrimonio (JSON)</h3>
         <textarea
@@ -163,7 +218,7 @@ export const UiFun = () => {
         )}
       </div>
 
-      {/* Campo de prueba - Texto e Imagen */}
+      {/* Sección de pruebas rápidas */}
       <div style={{ width: "100%", maxWidth: "800px", marginBottom: "20px" }}>
         <h3>Pruebas rápidas</h3>
         <div style={{ marginBottom: "10px" }}>
@@ -208,7 +263,7 @@ export const UiFun = () => {
         </div>
       </div>
 
-      {/* Controles de navegación con emojis a los lados */}
+      {/* Controles de navegación entre items */}
       <div
         style={{
           width: "100%",
@@ -252,7 +307,7 @@ export const UiFun = () => {
         </button>
       </div>
 
-      {/* Visualizador */}
+      {/* Visualizador principal con animaciones */}
       <div
         style={{
           width: "500px",
@@ -265,8 +320,10 @@ export const UiFun = () => {
           boxShadow: "0 4px 8px rgba(0,0,0,0.2)",
         }}
       >
+        {/* Componente de fondo animado */}
         <BgFun currentItem={currentItem} isPlaying={isPlaying} />
 
+        {/* Avatar y texto cuando está reproduciendo */}
         {isPlaying && (
           <>
             <img
@@ -299,14 +356,12 @@ export const UiFun = () => {
                 justifyContent: "center",
               }}
             >
-              {displayText.substring(
-                0,
-                Math.floor((displayText.length * progress) / 100)
-              )}
+              {sentences.length > 0 && sentences[currentSentenceIndex]}
             </div>
           </>
         )}
 
+        {/* Barra de progreso */}
         <div
           style={{
             position: "absolute",
@@ -328,6 +383,7 @@ export const UiFun = () => {
         </div>
       </div>
 
+      {/* Controles de reproducción principales */}
       <div style={{ display: "flex", gap: "10px" }}>
         {!isPlaying ? (
           <button

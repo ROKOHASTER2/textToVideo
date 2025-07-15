@@ -6,6 +6,8 @@ export interface HeritageDescription {
     extended: string;
   };
 }
+export const DEFAULT_IMAGE_URL =
+  "https://res.cloudinary.com/worldpackers/image/upload/c_limit,f_auto,q_auto,w_1140/ywx1rgzx6zwpavg3db1f";
 
 export interface HeritageItem {
   id: string;
@@ -13,7 +15,6 @@ export interface HeritageItem {
   description: HeritageDescription;
   imageUrl: string;
 }
-
 export const useCtrlFun = () => {
   const [heritageItems, setHeritageItems] = useState<HeritageItem[]>([]);
   const [currentItemIndex, setCurrentItemIndex] = useState(0);
@@ -111,6 +112,3 @@ export const useCtrlFun = () => {
     safeAdvance,
   };
 };
-
-export const DEFAULT_IMAGE_URL =
-  "https://res.cloudinary.com/worldpackers/image/upload/c_limit,f_auto,q_auto,w_1140/ywx1rgzx6zwpavg3db1f";
