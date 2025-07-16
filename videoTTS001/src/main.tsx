@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { UiFun } from "./uiFun";
+import { TextToVideo } from "./textToVideo";
 
 const rootElement = document.getElementById("root");
 
@@ -8,7 +8,7 @@ if (rootElement) {
   const root = ReactDOM.createRoot(rootElement);
   root.render(
     <React.StrictMode>
-      <UiFun />
+      <TextToVideo />
     </React.StrictMode>
   );
 }
