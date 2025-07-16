@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useSpeech } from "react-text-to-speech";
 import type { HeritageItem } from "./ctrlFun";
 import { PNG_TUBERS } from "./bgFun";
+import { translate } from "./translate";
 /*
   Cada objeto debe tener las siguientes propiedades:
 
@@ -27,7 +28,8 @@ import { PNG_TUBERS } from "./bgFun";
 export const useAudioFun = (
   currentItem: HeritageItem,
   descriptionLength: "short" | "extended",
-  onNextRequested?: () => void
+  onNextRequested?: () => void,
+  targetLanguage: "fr" | "en" | "es" = "es" // Add this parameter with default value
 ) => {
   // Estado para controlar si el audio está reproduciéndose
   const [isPlaying, setIsPlaying] = useState(false);
@@ -35,7 +37,6 @@ export const useAudioFun = (
   const [progress, setProgress] = useState(0);
   // Estado para la imagen actual del "tuber" (personaje) a mostrar
   const [currentTuber, setCurrentTuber] = useState(0);
-
   // Refs para mantener valores entre renders sin causar rerenders
   const progressInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number | null>(null);
@@ -44,13 +45,31 @@ export const useAudioFun = (
   // Callback para ejecutar cuando termina la reproducción
   const onFinishedCallback = useRef<(() => void) | null>(null);
 
-  // Obtiene el texto a mostrar según la longitud solicitada
-  const displayText = currentItem.description.local[descriptionLength];
+  //Esta usando local como base, hay que cambiarlo .
+  const [displayText, setDisplayText] = useState<string>(
+    currentItem.description.local[descriptionLength]
+  );
+  const local = "es";
+  useEffect(() => {
+    const translateText = async () => {
+      const text = currentItem.description.local[descriptionLength];
+      if (text) {
+        // Only translate if target language is not (original language)
+        const translatedText =
+          targetLanguage === local
+            ? text
+            : await translate(text, targetLanguage);
+        setDisplayText(translatedText);
+      }
+    };
+
+    translateText();
+  }, [currentItem, descriptionLength, targetLanguage]); // Add targetLanguage to dependencies
 
   // Configuración del hook de texto a voz
   const { start, stop, speechStatus } = useSpeech({
     text: displayText,
-    lang: "es-ES",
+    lang: targetLanguage,
     onStop: () => {
       // Se ejecuta cuando el audio termina naturalmente
       if (onFinishedCallback.current) {

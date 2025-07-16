@@ -20,6 +20,9 @@ function calculateSentenceDuration(sentence: string): number {
 
 // Componente principal de la interfaz de usuario del simulador de patrimonio cultural
 export const UiFun = () => {
+  const [targetLanguage, setTargetLanguage] = useState<"fr" | "en" | "es">(
+    "fr"
+  );
   // Extracción de estados y funciones del hook de control
   const {
     heritageItems,
@@ -54,7 +57,7 @@ export const UiFun = () => {
     displayText,
     handlePlay: audioHandlePlay,
     handleStop: audioHandleStop,
-  } = useAudioFun(currentItem, descriptionLength, safeAdvance);
+  } = useAudioFun(currentItem, descriptionLength, safeAdvance, targetLanguage);
 
   // Procesar el texto cuando cambia
   useEffect(() => {
@@ -172,6 +175,17 @@ export const UiFun = () => {
         >
           <option value="short">Descripción Corta</option>
           <option value="extended">Descripción Extendida</option>
+        </select>
+        <select
+          value={targetLanguage}
+          onChange={(e) =>
+            setTargetLanguage(e.target.value as "fr" | "en" | "es")
+          }
+          style={{ padding: "10px", width: "150px" }}
+        >
+          <option value="fr">Francés</option>
+          <option value="en">Inglés</option>
+          <option value="es">Español</option>
         </select>
       </div>
 
