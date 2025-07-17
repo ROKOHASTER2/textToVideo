@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { translate } from "./translate";
-import { useTTSPlayer, PNG_TUBERS } from "./ttsReact";
+import { useTTSPlayer, PNG_TUBERS } from "./tts11labs";
 
 interface HeritageDescription {
   local: {
@@ -29,16 +29,26 @@ export const TextToVideo = () => {
     "fr"
   );
   const [displayText, setDisplayText] = useState("");
-  const [shouldAutoPlayNext, setShouldAutoPlayNext] = useState(false);
   const [jsonInput, setJsonInput] = useState("");
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [testText, setTestText] = useState("");
   const [testImageUrl, setTestImageUrl] = useState("");
   const [sentences, setSentences] = useState<string[]>([]);
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
+  const [autoAdvance, setAutoAdvance] = useState(false);
+  const [isLoadingNext, setIsLoadingNext] = useState(false);
 
-  const isAutoAdvancing = useRef(false);
   const sentenceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const autoAdvanceRef = useRef(autoAdvance);
+  const currentItemRef = useRef(currentItemIndex);
+  const heritageItemsRef = useRef(heritageItems);
+
+  // Actualizar referencias
+  useEffect(() => {
+    autoAdvanceRef.current = autoAdvance;
+    currentItemRef.current = currentItemIndex;
+    heritageItemsRef.current = heritageItems;
+  }, [autoAdvance, currentItemIndex, heritageItems]);
 
   const currentItem = heritageItems[currentItemIndex] || {
     id: "default",
@@ -59,28 +69,36 @@ export const TextToVideo = () => {
     play: startTTS,
     stop: stopTTS,
     error: ttsError,
-  } = useTTSPlayer(displayText, targetLanguage, () => {
-    if (isAutoAdvancing.current && heritageItems.length > 1) {
-      setTimeout(() => {
+  } = useTTSPlayer({
+    text: displayText,
+    lang: targetLanguage,
+    onStop: () => {
+      if (autoAdvanceRef.current && heritageItemsRef.current.length > 1) {
+        setIsLoadingNext(true);
+        // Avanzar al siguiente elemento
         const nextIndex =
-          currentItemIndex < heritageItems.length - 1
-            ? currentItemIndex + 1
-            : 0;
+          (currentItemRef.current + 1) % heritageItemsRef.current.length;
         setCurrentItemIndex(nextIndex);
-        setShouldAutoPlayNext(true);
-      }, 100);
-    }
+      }
+    },
+    voiceId: "21m00Tcm4TlvDq8ikWAM",
+    apiKey: "sk_b79f1163753aac8d1e5f160f1a378a5ecafa59715d38511a",
   });
 
+  // Efecto para manejar la reproducción automática
   useEffect(() => {
-    if (shouldAutoPlayNext && displayText) {
+    if (isLoadingNext && displayText && !displayText.includes("JSON válido")) {
+      // Esperar a que el texto esté completamente cargado
       const timer = setTimeout(() => {
-        handlePlay();
-        setShouldAutoPlayNext(false);
-      }, 300);
+        if (!isPlaying) {
+          handlePlay();
+        }
+        setIsLoadingNext(false);
+      }, 500); // Tiempo adicional para asegurar la carga
+
       return () => clearTimeout(timer);
     }
-  }, [shouldAutoPlayNext, displayText]);
+  }, [isLoadingNext, displayText, isPlaying]);
 
   const loadHeritageFromJson = () => {
     try {
@@ -99,7 +117,6 @@ export const TextToVideo = () => {
 
       setHeritageItems(validatedItems);
       setCurrentItemIndex(0);
-      isAutoAdvancing.current = false;
       setJsonError(null);
     } catch (error: any) {
       setJsonError(`Error en el JSON: ${error.message}`);
@@ -118,7 +135,6 @@ export const TextToVideo = () => {
       },
     ]);
     setCurrentItemIndex(0);
-    isAutoAdvancing.current = false;
   };
 
   useEffect(() => {
@@ -147,13 +163,12 @@ export const TextToVideo = () => {
       return;
     }
 
-    isAutoAdvancing.current = true;
     startTTS();
   };
 
   const handleStop = () => {
-    isAutoAdvancing.current = false;
     stopTTS();
+    setIsLoadingNext(false);
 
     if (sentenceTimerRef.current) {
       clearTimeout(sentenceTimerRef.current);
@@ -161,14 +176,12 @@ export const TextToVideo = () => {
   };
 
   const handlePrev = () => {
-    isAutoAdvancing.current = false;
     setCurrentItemIndex((prev) =>
       prev > 0 ? prev - 1 : heritageItems.length - 1
     );
   };
 
   const handleNext = () => {
-    isAutoAdvancing.current = false;
     setCurrentItemIndex((prev) =>
       prev < heritageItems.length - 1 ? prev + 1 : 0
     );
@@ -232,6 +245,16 @@ export const TextToVideo = () => {
           <option value="en">Inglés</option>
           <option value="es">Español</option>
         </select>
+
+        <button
+          onClick={() => setAutoAdvance(!autoAdvance)}
+          style={{
+            ...styles.autoAdvanceButton,
+            backgroundColor: autoAdvance ? "#34a853" : "#ea4335",
+          }}
+        >
+          {autoAdvance ? "⏩ AUTO ON" : "⏩ AUTO OFF"}
+        </button>
       </div>
 
       <div style={styles.section}>
@@ -295,6 +318,12 @@ export const TextToVideo = () => {
           ⬅️
         </button>
 
+        <div style={styles.itemCounter}>
+          {heritageItems.length > 0
+            ? `${currentItemIndex + 1}/${heritageItems.length}`
+            : "0/0"}
+        </div>
+
         <button
           onClick={handleNext}
           disabled={heritageItems.length === 0}
@@ -332,6 +361,13 @@ export const TextToVideo = () => {
           </>
         )}
 
+        {isLoadingNext && (
+          <div style={styles.loadingOverlay}>
+            <div style={styles.loadingSpinner}></div>
+            <p>Cargando siguiente patrimonio...</p>
+          </div>
+        )}
+
         <div style={styles.progressBar}>
           <div style={{ ...styles.progressFill, width: `${progress}%` }} />
         </div>
@@ -341,10 +377,13 @@ export const TextToVideo = () => {
         {!isPlaying ? (
           <button
             onClick={handlePlay}
-            disabled={heritageItems.length === 0}
+            disabled={heritageItems.length === 0 || isLoadingNext}
             style={{
               ...styles.playButton,
-              backgroundColor: heritageItems.length === 0 ? "#ccc" : "#4285f4",
+              backgroundColor:
+                heritageItems.length === 0 || isLoadingNext
+                  ? "#ccc"
+                  : "#4285f4",
             }}
           >
             ▶️ Reproducir
@@ -380,6 +419,14 @@ const styles = {
   select: {
     padding: "10px",
     width: "150px",
+  },
+  autoAdvanceButton: {
+    padding: "10px 15px",
+    color: "white",
+    border: "none",
+    borderRadius: "4px",
+    cursor: "pointer",
+    fontWeight: "bold",
   },
   section: {
     width: "100%",
@@ -436,6 +483,11 @@ const styles = {
     border: "none",
     cursor: "pointer",
   },
+  itemCounter: {
+    padding: "5px 10px",
+    backgroundColor: "#f0f0f0",
+    borderRadius: "4px",
+  },
   viewer: {
     width: "500px",
     height: "300px",
@@ -474,6 +526,31 @@ const styles = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
+    fontSize: "16px",
+    lineHeight: "1.4",
+  },
+  loadingOverlay: {
+    position: "absolute" as const,
+    top: "0",
+    left: "0",
+    right: "0",
+    bottom: "0",
+    backgroundColor: "rgba(0,0,0,0.7)",
+    display: "flex",
+    flexDirection: "column" as const,
+    alignItems: "center",
+    justifyContent: "center",
+    color: "white",
+    zIndex: 10,
+  },
+  loadingSpinner: {
+    border: "4px solid rgba(255,255,255,0.3)",
+    borderRadius: "50%",
+    borderTop: "4px solid #4285f4",
+    width: "40px",
+    height: "40px",
+    animation: "spin 1s linear infinite",
+    marginBottom: "10px",
   },
   progressBar: {
     position: "absolute" as const,
@@ -499,6 +576,7 @@ const styles = {
     borderRadius: "4px",
     fontSize: "16px",
     fontWeight: "bold",
+    cursor: "pointer",
   },
   stopButton: {
     padding: "12px 24px",

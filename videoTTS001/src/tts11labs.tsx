@@ -16,6 +16,8 @@ interface TTSPlayerState {
 interface UseTTSResponse extends TTSPlayerState {
   play: () => void;
   stop: () => void;
+  toggleAutoAdvance: () => void;
+  isAutoAdvancing: boolean;
 }
 
 interface TTSOptions {
@@ -27,6 +29,7 @@ interface TTSOptions {
   model?: "standard" | "multilingual" | "enhanced";
   stability?: number;
   similarityBoost?: number;
+  autoAdvance?: boolean;
 }
 
 export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
@@ -36,11 +39,19 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
     currentTuber: 0,
     error: null,
   });
+  const [isAutoAdvancing, setIsAutoAdvancing] = useState(
+    options.autoAdvance || false
+  );
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const progressInterval = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef<number | null>(null);
   const estimatedDurationRef = useRef<number>(0);
+  const isAutoAdvancingRef = useRef(isAutoAdvancing);
+
+  useEffect(() => {
+    isAutoAdvancingRef.current = isAutoAdvancing;
+  }, [isAutoAdvancing]);
 
   const clearProgressInterval = () => {
     if (progressInterval.current) {
@@ -62,7 +73,26 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
       progress: 0,
       currentTuber: 0,
     }));
+  };
+
+  const toggleAutoAdvance = () => {
+    setIsAutoAdvancing((prev) => !prev);
+  };
+
+  const handleStop = () => {
+    stop();
     options.onStop?.();
+
+    if (isAutoAdvancingRef.current) {
+      setTimeout(() => {
+        setPlayerState((prev) => ({
+          ...prev,
+          isPlaying: false,
+          progress: 100,
+          currentTuber: 1,
+        }));
+      }, 100);
+    }
   };
 
   const play = async () => {
@@ -91,7 +121,6 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
       estimatedDurationRef.current = wordCount / 2.5;
       startTimeRef.current = Date.now();
 
-      // Configurar intervalo de progreso
       progressInterval.current = setInterval(() => {
         if (!startTimeRef.current) return;
 
@@ -108,7 +137,6 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
         }));
       }, 100);
 
-      // Llamada a la API de ElevenLabs
       const modelId =
         options.model === "standard"
           ? "eleven_monolingual_v1"
@@ -140,16 +168,8 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
       const audioUrl = URL.createObjectURL(response.data);
       audioRef.current = new Audio(audioUrl);
 
-      audioRef.current.addEventListener("ended", () => {
-        setPlayerState((prev) => ({
-          ...prev,
-          isPlaying: false,
-          progress: 100,
-          currentTuber: 1,
-        }));
-        URL.revokeObjectURL(audioUrl);
-        options.onStop?.();
-      });
+      audioRef.current.addEventListener("ended", handleStop);
+      audioRef.current.addEventListener("error", handleStop);
 
       await audioRef.current.play();
     } catch (error) {
@@ -169,6 +189,10 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
   useEffect(() => {
     return () => {
       stop();
+      if (audioRef.current) {
+        audioRef.current.removeEventListener("ended", handleStop);
+        audioRef.current.removeEventListener("error", handleStop);
+      }
     };
   }, []);
 
@@ -176,6 +200,8 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
     ...playerState,
     play,
     stop,
+    toggleAutoAdvance,
+    isAutoAdvancing,
   };
 }
 
