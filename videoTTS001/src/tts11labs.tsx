@@ -1,18 +1,21 @@
 import axios from "axios";
 import { useState, useRef, useEffect } from "react";
 
+// Definición del tipo de error que puede devolver el TTS
 interface TTSError {
   type: "audio" | "synthesis" | "network";
   message: string;
 }
 
+// Estado principal del reproductor TTS
 interface TTSPlayerState {
   isPlaying: boolean;
   progress: number;
-  currentTuber: number;
+  currentPNGTuber: number;
   error: TTSError | null;
 }
 
+// Estado que devuelve el hook, extiende TTSPlayerState e incluye funciones
 interface UseTTSResponse extends TTSPlayerState {
   play: () => void;
   stop: () => void;
@@ -20,6 +23,7 @@ interface UseTTSResponse extends TTSPlayerState {
   isAutoAdvancing: boolean;
 }
 
+// Opciones que recibe el hook
 interface TTSOptions {
   text: string;
   lang?: "fr" | "en" | "es";
@@ -32,13 +36,22 @@ interface TTSOptions {
   autoAdvance?: boolean;
 }
 
+/**
+ * Hook principal para reproducir texto a voz usando la API de ElevenLabs.
+ * Además, alterna imágenes tipo PNGTuber mientras se reproduce el audio.
+ * - Controla el progreso del audio de forma estimada (por palabras).
+ * - Alterna entre dos imágenes PNG para simular expresión mientras habla.
+ * - Soporta auto-advance, es decir, cuando termina el audio, automáticamente puede avanzar al siguiente bloque de texto si lo integras con un sistema externo.
+ * - Gestiona errores de red, de síntesis o de audio.
+ */
 export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
   const [playerState, setPlayerState] = useState<TTSPlayerState>({
     isPlaying: false,
     progress: 0,
-    currentTuber: 0,
+    currentPNGTuber: 0,
     error: null,
   });
+
   const [isAutoAdvancing, setIsAutoAdvancing] = useState(
     options.autoAdvance || false
   );
@@ -53,6 +66,10 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
     isAutoAdvancingRef.current = isAutoAdvancing;
   }, [isAutoAdvancing]);
 
+  /**
+   * Limpia el intervalo de progreso y reinicia el tiempo de inicio.
+   * Esta función se usa al parar la reproducción o cuando ocurre un error.
+   */
   const clearProgressInterval = () => {
     if (progressInterval.current) {
       clearInterval(progressInterval.current);
@@ -61,6 +78,10 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
     startTimeRef.current = null;
   };
 
+  /**
+   * Detiene la reproducción de audio y resetea el estado.
+   * También limpia cualquier intervalo de progreso en ejecución.
+   */
   const stop = () => {
     if (audioRef.current) {
       audioRef.current.pause();
@@ -71,14 +92,23 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
       ...prev,
       isPlaying: false,
       progress: 0,
-      currentTuber: 0,
+      currentPNGTuber: 0,
     }));
   };
 
+  /**
+   * Alterna el modo "auto-advance".
+   * Cuando está activado, al terminar el audio automáticamente se puede ejecutar una acción extra (como pasar al siguiente texto).
+   */
   const toggleAutoAdvance = () => {
     setIsAutoAdvancing((prev) => !prev);
   };
 
+  /**
+   * Función que se ejecuta al finalizar el audio o si ocurre un error durante la reproducción.
+   * - Llama al callback `onStop` si se definió.
+   * - Si el auto-advance está activado, fuerza el cambio de imagen PNG y completa el progreso al 100%.
+   */
   const handleStop = () => {
     stop();
     options.onStop?.();
@@ -89,12 +119,18 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
           ...prev,
           isPlaying: false,
           progress: 100,
-          currentTuber: 1,
+          currentPNGTuber: 1,
         }));
       }, 100);
     }
   };
 
+  /**
+   * Función principal que envía el texto a ElevenLabs, recibe el audio y lo reproduce.
+   * Mientras el audio suena, se estima el progreso en base al número de palabras
+   * y se alternan imágenes PNG cada 50% del progreso para simular expresión facial.
+   * Maneja posibles errores y soporta distintos modelos de voz.
+   */
   const play = async () => {
     if (!options.text.trim()) {
       setPlayerState((prev) => ({
@@ -107,13 +143,13 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
       return;
     }
 
-    stop(); // Detener cualquier reproducción previa
+    stop(); // Asegura que no haya una reproducción previa activa
 
     try {
       setPlayerState({
         isPlaying: true,
         progress: 0,
-        currentTuber: 0,
+        currentPNGTuber: 0,
         error: null,
       });
 
@@ -121,6 +157,7 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
       estimatedDurationRef.current = wordCount / 2.5;
       startTimeRef.current = Date.now();
 
+      // Establece un intervalo para simular el progreso del audio y alternar imágenes
       progressInterval.current = setInterval(() => {
         if (!startTimeRef.current) return;
 
@@ -133,10 +170,11 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
         setPlayerState((prev) => ({
           ...prev,
           progress,
-          currentTuber: Math.floor(progress / 50) % 2,
+          currentPNGTuber: Math.floor(progress / 50) % 2,
         }));
       }, 100);
 
+      // Selecciona el modelo de voz según la opción elegida
       const modelId =
         options.model === "standard"
           ? "eleven_monolingual_v1"
@@ -144,6 +182,7 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
           ? "eleven_turbo_v2"
           : "eleven_multilingual_v2";
 
+      // Llama a la API de ElevenLabs con las configuraciones elegidas
       const response = await axios.post(
         `https://api.elevenlabs.io/v1/text-to-speech/${options.voiceId}`,
         {
@@ -165,6 +204,7 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
         }
       );
 
+      // Crea un objeto de audio desde el blob recibido y lo reproduce
       const audioUrl = URL.createObjectURL(response.data);
       audioRef.current = new Audio(audioUrl);
 
@@ -186,6 +226,10 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
     }
   };
 
+  /**
+   * Hook de efecto que se ejecuta al desmontar el componente.
+   * Se asegura de parar la reproducción y limpiar los eventos del audio para evitar fugas de memoria.
+   */
   useEffect(() => {
     return () => {
       stop();
@@ -196,6 +240,12 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
     };
   }, []);
 
+  /**
+   * Devuelve el estado y las funciones disponibles al consumir el hook:
+   * - play: inicia la reproducción
+   * - stop: detiene la reproducción
+   * - toggleAutoAdvance: cambia el modo auto avance
+   */
   return {
     ...playerState,
     play,
@@ -205,6 +255,10 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
   };
 }
 
+/**
+ * Lista de URLs de imágenes PNG para alternar mientras el personaje habla.
+ * Esto simula un PNGTuber cambiando de expresión durante la lectura del texto.
+ */
 export const PNG_TUBERS = [
   "https://facturacion-electronica.ec/wp-content/uploads/2019/04/scratching_head_pc_800_clr_2723.png",
   "https://pbs.twimg.com/media/BqQ5S0iCQAACkRA.png",

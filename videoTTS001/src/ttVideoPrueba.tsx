@@ -1,45 +1,69 @@
-// Importamos hooks de React para manejar estado, ciclos de vida y referencias mutables
 import { useState, useEffect, useRef } from "react";
-
-// Función de traducción personalizada con la Api de Google Translate
 import { translate } from "./translate";
-
-// Hook personalizado que gestiona la reproducción de texto a voz (TTS) y el sistema de PNGTubers (avatares animados)
 import { useTTSPlayer, PNG_TUBERS } from "./tts11labs";
 
-// Definimos una interfaz para describir el formato de descripción de un patrimonio cultural
 interface HeritageDescription {
   local: {
     short: string;
     extended: string;
   };
+  english?: {
+    short: string;
+    extended: string;
+  };
 }
 
-// Definimos la estructura de un elemento patrimonial
+interface InputHeritageItem {
+  identifier: number | string;
+  name: string;
+  latitude?: number;
+  longitude?: number;
+  image: string;
+  addressProvince?: string;
+  addressLocality?: string;
+  addressCountry?: string;
+  type?: string;
+  description: HeritageDescription;
+}
+
 interface HeritageItem {
   id: string;
   name: string;
-  description: HeritageDescription;
+  description: {
+    local: {
+      short: string;
+      extended: string;
+    };
+  };
   imageUrl: string;
 }
 
 const DEFAULT_IMAGE_URL =
   "https://res.cloudinary.com/worldpackers/image/upload/c_limit,f_auto,q_auto,w_1140/ywx1rgzx6zwpavg3db1f";
 
-export const TextToVideo = () => {
-  const [heritageItems, setHeritageItems] = useState<HeritageItem[]>([]);
+interface TextToVideoProps {
+  heritageItems: InputHeritageItem[];
+  targetLanguage: "fr" | "en" | "es";
+  descriptionLength: "short" | "extended";
+}
+
+export const TextToVideo = ({
+  heritageItems = [],
+  targetLanguage = "es",
+  descriptionLength = "extended",
+}: TextToVideoProps) => {
+  // Mapeamos los items de entrada al formato esperado internamente
+  const mappedHeritageItems = heritageItems.map((item) => ({
+    id: item.identifier.toString(),
+    name: item.name,
+    description: {
+      local: item.description.local,
+    },
+    imageUrl: item.image || DEFAULT_IMAGE_URL,
+  }));
+
   const [currentItemIndex, setCurrentItemIndex] = useState(0);
-  const [descriptionLength, setDescriptionLength] = useState<
-    "short" | "extended"
-  >("extended");
-  const [targetLanguage, setTargetLanguage] = useState<"fr" | "en" | "es">(
-    "fr"
-  );
   const [displayText, setDisplayText] = useState("");
-  const [jsonInput, setJsonInput] = useState("");
-  const [jsonError, setJsonError] = useState<string | null>(null);
-  const [testText, setTestText] = useState("");
-  const [testImageUrl, setTestImageUrl] = useState("");
   const [sentences, setSentences] = useState<string[]>([]);
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
   const [autoAdvance, setAutoAdvance] = useState(false);
@@ -48,40 +72,26 @@ export const TextToVideo = () => {
   const sentenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const autoAdvanceRef = useRef(autoAdvance);
   const currentItemRef = useRef(currentItemIndex);
-  const heritageItemsRef = useRef(heritageItems);
+  const heritageItemsRef = useRef(mappedHeritageItems);
 
-  /**
-   * Efecto para sincronizar las referencias con los estados actuales
-   * Esto asegura que las referencias siempre tengan los valores más recientes
-   * incluso dentro de callbacks asíncronos
-   */
   useEffect(() => {
     autoAdvanceRef.current = autoAdvance;
     currentItemRef.current = currentItemIndex;
-    heritageItemsRef.current = heritageItems;
-  }, [autoAdvance, currentItemIndex, heritageItems]);
+    heritageItemsRef.current = mappedHeritageItems;
+  }, [autoAdvance, currentItemIndex, mappedHeritageItems]);
 
-  const currentItem = heritageItems[currentItemIndex] || {
+  const currentItem = mappedHeritageItems[currentItemIndex] || {
     id: "default",
     name: "Patrimonio Cultural",
     description: {
       local: {
-        short: "Ingrese un JSON válido para comenzar",
-        extended: "Ingrese un JSON válido para comenzar",
+        short: "No hay datos disponibles",
+        extended: "No hay datos disponibles",
       },
     },
-    imageUrl: "",
+    imageUrl: DEFAULT_IMAGE_URL,
   };
 
-  /**
-   * Hook personalizado para el reproductor de Text-to-Speech
-   * Gestiona la reproducción de audio y la animación del avatar PNGTuber
-   * @param text - Texto a convertir a voz
-   * @param lang - Idioma de la voz
-   * @param onStop - Callback que se ejecuta al terminar la reproducción
-   * @param voiceId - ID de la voz a utilizar
-   * @param apiKey - Clave de API para el servicio TTS
-   */
   const {
     isPlaying,
     progress,
@@ -103,77 +113,18 @@ export const TextToVideo = () => {
     apiKey: "sk_b79f1163753aac8d1e5f160f1a378a5ecafa59715d38511a",
   });
 
-  /**
-   * Efecto para manejar el avance automático al siguiente patrimonio
-   * Se activa cuando isLoadingNext cambia y hay texto para mostrar
-   * Espera un breve momento antes de iniciar la reproducción automática
-   */
   useEffect(() => {
-    if (isLoadingNext && displayText && !displayText.includes("JSON válido")) {
+    if (isLoadingNext && displayText) {
       const timer = setTimeout(() => {
         if (!isPlaying) {
           handlePlay();
         }
         setIsLoadingNext(false);
       }, 500);
-      // si baja de 500 el tiemout, el tts reproduce el audio anterior
-      // asi que no hay que tocar esto
       return () => clearTimeout(timer);
     }
   }, [isLoadingNext, displayText, isPlaying]);
 
-  /**
-   * Función para cargar y validar datos de patrimonio desde un JSON
-   * Parsea el input JSON, valida la estructura y actualiza el estado
-   * Muestra errores si el JSON es inválido o no tiene el formato correcto
-   */
-  const loadHeritageFromJson = () => {
-    try {
-      const parsedItems = JSON.parse(jsonInput);
-      if (!Array.isArray(parsedItems))
-        throw new Error("El JSON debe ser un array de objetos");
-
-      const validatedItems = parsedItems.map((item, index) => ({
-        id: item.identifier?.toString() || `item-${index}`,
-        name: item.name || `Patrimonio ${index + 1}`,
-        description: {
-          local: item.description?.local || { short: "", extended: "" },
-        },
-        imageUrl: item.image || "",
-      }));
-
-      setHeritageItems(validatedItems);
-      setCurrentItemIndex(0);
-      setJsonError(null);
-    } catch (error: any) {
-      setJsonError(`Error en el JSON: ${error.message}`);
-    }
-  };
-
-  /**
-   * Función para preparar un elemento de prueba rápido
-   * Permite probar la funcionalidad sin necesidad de cargar un JSON completo
-   * Crea un único elemento de patrimonio con los datos proporcionados
-   */
-  const prepareTestItem = () => {
-    setHeritageItems([
-      {
-        id: "test-item",
-        name: "Prueba personalizada",
-        description: {
-          local: { short: testText, extended: testText },
-        },
-        imageUrl: testImageUrl || DEFAULT_IMAGE_URL,
-      },
-    ]);
-    setCurrentItemIndex(0);
-  };
-
-  /**
-   * Efecto para traducir el texto de descripción al idioma seleccionado
-   * Se ejecuta cuando cambia el elemento actual, la longitud de descripción o el idioma objetivo
-   * Utiliza la función translate para obtener la traducción asíncrona
-   */
   useEffect(() => {
     const fetchTranslation = async () => {
       const text = currentItem.description.local[descriptionLength];
@@ -191,85 +142,51 @@ export const TextToVideo = () => {
     fetchTranslation();
   }, [currentItem, descriptionLength, targetLanguage]);
 
-  /**
-   * Función para iniciar la reproducción del texto a voz
-   * Verifica que haya texto válido antes de iniciar la reproducción
-   * Muestra una alerta si no hay contenido para reproducir
-   */
   const handlePlay = () => {
-    if (!displayText.trim() || displayText.includes("JSON válido")) {
+    if (!displayText.trim()) {
       alert("No hay contenido para reproducir");
       return;
     }
-
     startTTS();
   };
 
-  /**
-   * Función para detener la reproducción actual
-   * Limpia temporizadores y resetea el estado de carga
-   */
   const handleStop = () => {
     stopTTS();
     setIsLoadingNext(false);
-
     if (sentenceTimerRef.current) {
       clearTimeout(sentenceTimerRef.current);
     }
   };
 
-  /**
-   * Función para navegar al elemento patrimonial anterior
-   * Implementa un comportamiento circular (vuelve al último cuando está en el primero)
-   */
   const handlePrev = () => {
     setCurrentItemIndex((prev) =>
       prev > 0 ? prev - 1 : heritageItems.length - 1
     );
   };
 
-  /**
-   * Función para navegar al siguiente elemento patrimonial
-   * Implementa un comportamiento circular (vuelve al primero cuando está en el último)
-   */
   const handleNext = () => {
     setCurrentItemIndex((prev) =>
       prev < heritageItems.length - 1 ? prev + 1 : 0
     );
   };
 
-  /**
-   * Efecto de limpieza al desmontar el componente
-   * Asegura que se cancelen todos los temporizadores pendientes
-   */
   useEffect(() => {
     return () => {
       if (sentenceTimerRef.current) clearTimeout(sentenceTimerRef.current);
     };
   }, []);
 
-  /**
-   * Efecto para dividir el texto en oraciones para los subtítulos
-   * Separa el texto por signos de puntuación y filtra oraciones vacías
-   * Se ejecuta cada vez que cambia el texto a mostrar
-   */
   useEffect(() => {
     if (displayText) {
       const newSentences = displayText
         .split(/(?<=[.!?])\s+/g)
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
-
       setSentences(newSentences);
       setCurrentSentenceIndex(0);
     }
   }, [displayText]);
 
-  /**
-   * Efecto para controlar la transición entre oraciones en los subtítulos
-   * Calcula la duración de cada oración basada en su longitud
-   * Avanza automáticamente a la siguiente oración mientras se reproduce el audio
-   */
   useEffect(() => {
     if (!isPlaying || sentences.length === 0) return;
 
@@ -285,32 +202,7 @@ export const TextToVideo = () => {
 
   return (
     <div style={styles.container}>
-      <h2 style={styles.title}>Simulador de Patrimonio Cultural</h2>
-
       <div style={styles.controlsRow}>
-        <select
-          value={descriptionLength}
-          onChange={(e) =>
-            setDescriptionLength(e.target.value as "short" | "extended")
-          }
-          style={styles.select}
-        >
-          <option value="short">Descripción Corta</option>
-          <option value="extended">Descripción Extendida</option>
-        </select>
-
-        <select
-          value={targetLanguage}
-          onChange={(e) =>
-            setTargetLanguage(e.target.value as "fr" | "en" | "es")
-          }
-          style={styles.select}
-        >
-          <option value="fr">Francés</option>
-          <option value="en">Inglés</option>
-          <option value="es">Español</option>
-        </select>
-
         <button
           onClick={() => setAutoAdvance(!autoAdvance)}
           style={{
@@ -320,57 +212,6 @@ export const TextToVideo = () => {
         >
           {autoAdvance ? "⏩ AUTO ON" : "⏩ AUTO OFF"}
         </button>
-      </div>
-
-      <div style={styles.section}>
-        <h3>Cargar datos de patrimonio (JSON)</h3>
-        <textarea
-          value={jsonInput}
-          onChange={(e) => setJsonInput(e.target.value)}
-          placeholder="Pega aquí el JSON con los datos de patrimonio..."
-          style={styles.textarea}
-        />
-
-        {jsonError && <div style={styles.error}>{jsonError}</div>}
-
-        <button onClick={loadHeritageFromJson} style={styles.buttonPrimary}>
-          Cargar JSON
-        </button>
-
-        {heritageItems.length > 0 && (
-          <div style={styles.infoBox}>
-            <strong>{heritageItems.length}</strong> patrimonios cargados
-          </div>
-        )}
-      </div>
-
-      <div style={styles.section}>
-        <h3>Pruebas rápidas</h3>
-        <div>
-          <input
-            type="text"
-            value={testText}
-            onChange={(e) => setTestText(e.target.value)}
-            placeholder="Texto para probar"
-            style={styles.input}
-          />
-          <input
-            type="text"
-            value={testImageUrl}
-            onChange={(e) => setTestImageUrl(e.target.value)}
-            placeholder="URL de imagen (opcional)"
-            style={styles.input}
-          />
-          <button
-            onClick={() => {
-              prepareTestItem();
-              setTimeout(handlePlay, 100);
-            }}
-            style={styles.buttonSuccess}
-          >
-            Probar
-          </button>
-        </div>
       </div>
 
       <div style={styles.navigation}>
@@ -473,17 +314,10 @@ const styles = {
     minHeight: "100vh",
     fontFamily: "Arial, sans-serif",
   },
-  title: {
-    marginBottom: "30px",
-  },
   controlsRow: {
     display: "flex",
     gap: "10px",
     marginBottom: "20px",
-  },
-  select: {
-    padding: "10px",
-    width: "150px",
   },
   autoAdvanceButton: {
     padding: "10px 15px",
@@ -492,46 +326,6 @@ const styles = {
     borderRadius: "4px",
     cursor: "pointer",
     fontWeight: "bold",
-  },
-  section: {
-    width: "100%",
-    maxWidth: "800px",
-    marginBottom: "20px",
-  },
-  textarea: {
-    width: "100%",
-    height: "200px",
-    padding: "10px",
-    fontFamily: "monospace",
-    marginBottom: "10px",
-  },
-  input: {
-    width: "100%",
-    padding: "10px",
-    marginBottom: "10px",
-  },
-  error: {
-    color: "red",
-    marginBottom: "10px",
-  },
-  buttonPrimary: {
-    padding: "10px 15px",
-    backgroundColor: "#4285f4",
-    color: "white",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-  },
-  buttonSuccess: {
-    padding: "10px 15px",
-    backgroundColor: "#34a853",
-    color: "white",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-  },
-  infoBox: {
-    marginTop: "15px",
   },
   navigation: {
     width: "100%",

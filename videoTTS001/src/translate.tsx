@@ -14,15 +14,6 @@ type LanguageCode =
   | "ar"
   | string;
 
-interface TranslateResponse {
-  data: {
-    translations: {
-      translatedText: string;
-      detectedSourceLanguage?: string;
-    }[];
-  };
-}
-
 /**
  * Función para traducir texto usando la API de Google Translate
  * @param {string} texto - Texto a traducir
