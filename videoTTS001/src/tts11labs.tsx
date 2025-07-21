@@ -1,6 +1,6 @@
 import axios from "axios";
 import { useState, useRef, useEffect } from "react";
-
+import beardGuy from "./PNGTUBERS/women.webp";
 // Definición del tipo de error que puede devolver el TTS
 interface TTSError {
   type: "audio" | "synthesis" | "network";
@@ -65,7 +65,16 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
   useEffect(() => {
     isAutoAdvancingRef.current = isAutoAdvancing;
   }, [isAutoAdvancing]);
+  /**
+   * Calcula el índice del PNGTuber actual basado en el progreso y el número de imágenes disponibles
+   */
+  const getCurrentPNGTuberIndex = (progress: number): number => {
+    if (PNG_TUBERS.length <= 1) return 0; // Si solo hay 1 imagen, siempre usa la 0
 
+    const segments = PNG_TUBERS.length;
+    const segmentSize = 100 / segments;
+    return Math.min(Math.floor(progress / segmentSize), segments - 1);
+  };
   /**
    * Limpia el intervalo de progreso y reinicia el tiempo de inicio.
    * Esta función se usa al parar la reproducción o cuando ocurre un error.
@@ -119,7 +128,7 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
           ...prev,
           isPlaying: false,
           progress: 100,
-          currentPNGTuber: 1,
+          currentPNGTuber: PNG_TUBERS.length > 1 ? PNG_TUBERS.length - 1 : 0,
         }));
       }, 100);
     }
@@ -170,7 +179,7 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
         setPlayerState((prev) => ({
           ...prev,
           progress,
-          currentPNGTuber: Math.floor(progress / 50) % 2,
+          currentPNGTuber: getCurrentPNGTuberIndex(progress),
         }));
       }, 100);
 
@@ -259,7 +268,4 @@ export function useTTSPlayer(options: TTSOptions): UseTTSResponse {
  * Lista de URLs de imágenes PNG para alternar mientras el personaje habla.
  * Esto simula un PNGTuber cambiando de expresión durante la lectura del texto.
  */
-export const PNG_TUBERS = [
-  "https://facturacion-electronica.ec/wp-content/uploads/2019/04/scratching_head_pc_800_clr_2723.png",
-  "https://pbs.twimg.com/media/BqQ5S0iCQAACkRA.png",
-];
+export const PNG_TUBERS = [beardGuy];
