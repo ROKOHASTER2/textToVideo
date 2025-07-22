@@ -1,86 +1,116 @@
-// Importamos hooks de React para manejar estado, ciclos de vida y referencias mutables
 import { useState, useEffect, useRef } from "react";
-
-// Función de traducción personalizada con la Api de Google Translate
 import { translate } from "./translate";
-
-// Hook personalizado que gestiona la reproducción de texto a voz (TTS) y el sistema de PNGTubers (avatares animados)
 import { useTTSPlayer, PNG_TUBERS } from "./tts11labs";
 
-// Definimos una interfaz para describir el formato de descripción de un patrimonio cultural
+/**
+ * Estructura de descripción del patrimonio.
+ * Incluye texto corto y extendido en idioma local y opcionalmente en inglés.
+ */
 interface HeritageDescription {
   local: {
     short: string;
     extended: string;
   };
+  english?: {
+    short: string;
+    extended: string;
+  };
 }
 
-// Definimos la estructura de un elemento patrimonial
-interface HeritageItem {
-  id: string;
+/**
+ * Estructura de entrada para un elemento de patrimonio.
+ * Se usa como input inicial antes de mapear al formato interno.
+ */
+interface InputHeritageItem {
+  identifier: number | string;
   name: string;
+  latitude?: number;
+  longitude?: number;
+  image: string;
+  addressProvince?: string;
+  addressLocality?: string;
+  addressCountry?: string;
+  type?: string;
   description: HeritageDescription;
-  imageUrl: string;
 }
 
+// URL por defecto en caso de que algún item no tenga imagen
 const DEFAULT_IMAGE_URL =
   "https://res.cloudinary.com/worldpackers/image/upload/c_limit,f_auto,q_auto,w_1140/ywx1rgzx6zwpavg3db1f";
 
-export const TextToVideo = () => {
-  const [heritageItems, setHeritageItems] = useState<HeritageItem[]>([]);
-  const [currentItemIndex, setCurrentItemIndex] = useState(0);
-  const [descriptionLength, setDescriptionLength] = useState<
-    "short" | "extended"
-  >("extended");
-  const [targetLanguage, setTargetLanguage] = useState<"fr" | "en" | "es">(
-    "fr"
-  );
-  const [displayText, setDisplayText] = useState("");
-  const [jsonInput, setJsonInput] = useState("");
-  const [jsonError, setJsonError] = useState<string | null>(null);
-  const [testText, setTestText] = useState("");
-  const [testImageUrl, setTestImageUrl] = useState("");
-  const [sentences, setSentences] = useState<string[]>([]);
-  const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
-  const [autoAdvance, setAutoAdvance] = useState(false);
-  const [isLoadingNext, setIsLoadingNext] = useState(false);
+/**
+ * Props que recibe el componente TextToVideo.
+ * - heritageItems: array de patrimonios
+ * - targetLanguage: idioma objetivo de la traducción
+ * - descriptionLength: si se usa la descripción corta o extendida
+ */
+interface TextToVideoProps {
+  heritageItems: InputHeritageItem[];
+  // si se quiere meter mas idiomas habra que cambiar
+  // este targetLanguage y el lang de tts11labs
+  targetLanguage: "fr" | "en" | "es";
+  descriptionLength: "short" | "extended";
+}
 
+/**
+ * Componente principal que convierte texto de patrimonio en un "video" hablado con PNG tubers.
+ * Permite navegación entre patrimonios, reproducción automática y muestra subtítulos.
+ */
+export const TextToVideo = ({
+  heritageItems = [],
+  targetLanguage = "es",
+  descriptionLength = "extended",
+}: TextToVideoProps) => {
+  /**
+   * Mapeamos los elementos recibidos al formato interno simplificado.
+   * Esto estandariza los datos y previene errores al acceder a las propiedades.
+   */
+  const mappedHeritageItems = heritageItems.map((item) => ({
+    id: item.identifier.toString(),
+    name: item.name,
+    description: {
+      local: item.description.local,
+    },
+    imageUrl: item.image || DEFAULT_IMAGE_URL,
+  }));
+
+  // Estados principales
+  const [currentItemIndex, setCurrentItemIndex] = useState(0); // Índice del patrimonio actual
+  const [displayText, setDisplayText] = useState(""); // Texto traducido a mostrar/reproducir
+  const [sentences, setSentences] = useState<string[]>([]); // Oraciones separadas para subtitulado dinámico
+  const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0); // Oración actual en subtítulos
+  const [autoAdvance, setAutoAdvance] = useState(false); // Modo automático: pasa al siguiente patrimonio al terminar
+  const [isLoadingNext, setIsLoadingNext] = useState(false); // Indica si está cargando el siguiente patrimonio
+
+  // Refs para mantener valores actualizados dentro de callbacks y evitar cierres sobre valores viejos
   const sentenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const autoAdvanceRef = useRef(autoAdvance);
   const currentItemRef = useRef(currentItemIndex);
-  const heritageItemsRef = useRef(heritageItems);
+  const heritageItemsRef = useRef(mappedHeritageItems);
 
-  /**
-   * Efecto para sincronizar las referencias con los estados actuales
-   * Esto asegura que las referencias siempre tengan los valores más recientes
-   * incluso dentro de callbacks asíncronos
-   */
+  // Mantiene las refs sincronizadas con los estados actuales
   useEffect(() => {
     autoAdvanceRef.current = autoAdvance;
     currentItemRef.current = currentItemIndex;
-    heritageItemsRef.current = heritageItems;
-  }, [autoAdvance, currentItemIndex, heritageItems]);
+    heritageItemsRef.current = mappedHeritageItems;
+  }, [autoAdvance, currentItemIndex, mappedHeritageItems]);
 
-  const currentItem = heritageItems[currentItemIndex] || {
+  // Elemento actual con fallback si no hay datos
+  const currentItem = mappedHeritageItems[currentItemIndex] || {
     id: "default",
     name: "Patrimonio Cultural",
     description: {
       local: {
-        short: "Ingrese un JSON válido para comenzar",
-        extended: "Ingrese un JSON válido para comenzar",
+        short: "No hay datos disponibles",
+        extended: "No hay datos disponibles",
       },
     },
-    imageUrl: "",
+    imageUrl: DEFAULT_IMAGE_URL,
   };
 
   /**
-   * Hook personalizado para el reproductor de Text-to-Speech
-   * Gestiona la reproducción de audio y la animación del avatar PNGTuber
-   * @param text - Texto a convertir a voz
-   * @param lang - Idioma de la voz
-   * @param onStop - Callback que se ejecuta al terminar la reproducción
-   * @param voiceId - ID de la voz a utilizar
-   * @param apiKey - Clave de API para el servicio TTS
+   * Hook personalizado para reproducción TTS (voz).
+   * Maneja el progreso, los eventos de parada y el PNG Tuber que habla.
    */
   const {
     isPlaying,
@@ -92,6 +122,7 @@ export const TextToVideo = () => {
     text: displayText,
     lang: targetLanguage,
     onStop: () => {
+      // Si está el modo automático activado, pasa al siguiente patrimonio
       if (autoAdvanceRef.current && heritageItemsRef.current.length > 1) {
         setIsLoadingNext(true);
         const nextIndex =
@@ -99,148 +130,90 @@ export const TextToVideo = () => {
         setCurrentItemIndex(nextIndex);
       }
     },
-    voiceId: "21m00Tcm4TlvDq8ikWAM",
-    apiKey: "sk_b79f1163753aac8d1e5f160f1a378a5ecafa59715d38511a",
+    voiceId: "21m00Tcm4TlvDq8ikWAM", // ID de voz ElevenLabs, aqui se cambia la voz
+    apiKey: "sk_b79f1163753aac8d1e5f160f1a378a5ecafa59715d38511a", // ¡ATENCIÓN! clave hardcodeada
   });
 
   /**
-   * Efecto para manejar el avance automático al siguiente patrimonio
-   * Se activa cuando isLoadingNext cambia y hay texto para mostrar
-   * Espera un breve momento antes de iniciar la reproducción automática
+   * Maneja la carga del siguiente patrimonio con un delay de 600ms para evitar cortes bruscos.
    */
   useEffect(() => {
-    if (isLoadingNext && displayText && !displayText.includes("JSON válido")) {
+    if (isLoadingNext && displayText) {
       const timer = setTimeout(() => {
         if (!isPlaying) {
           handlePlay();
         }
         setIsLoadingNext(false);
-      }, 500);
-      // si baja de 500 el tiemout, el tts reproduce el audio anterior
-      // asi que no hay que tocar esto
+      }, 600); // si se cambia a menos de 600 se reproducira el audio anterior
       return () => clearTimeout(timer);
     }
   }, [isLoadingNext, displayText, isPlaying]);
 
   /**
-   * Función para cargar y validar datos de patrimonio desde un JSON
-   * Parsea el input JSON, valida la estructura y actualiza el estado
-   * Muestra errores si el JSON es inválido o no tiene el formato correcto
+   * Traduce el texto al idioma objetivo al cambiar de patrimonio, idioma o longitud de descripción.
+   * Usa un fallback al texto local si falla la traducción.
    */
-  const loadHeritageFromJson = () => {
-    try {
-      const parsedItems = JSON.parse(jsonInput);
-      if (!Array.isArray(parsedItems))
-        throw new Error("El JSON debe ser un array de objetos");
-
-      const validatedItems = parsedItems.map((item, index) => ({
-        id: item.identifier?.toString() || `item-${index}`,
-        name: item.name || `Patrimonio ${index + 1}`,
-        description: {
-          local: item.description?.local || { short: "", extended: "" },
-        },
-        imageUrl: item.image || "",
-      }));
-
-      setHeritageItems(validatedItems);
-      setCurrentItemIndex(0);
-      setJsonError(null);
-    } catch (error: any) {
-      setJsonError(`Error en el JSON: ${error.message}`);
+  const fetchTranslation = async () => {
+    const text = currentItem.description.local[descriptionLength];
+    if (text) {
+      try {
+        const translatedText = await translate(text, targetLanguage);
+        setDisplayText(translatedText);
+      } catch (error) {
+        console.error("Error en traducción:", error);
+        setDisplayText(text);
+      }
     }
   };
-
-  /**
-   * Función para preparar un elemento de prueba rápido
-   * Permite probar la funcionalidad sin necesidad de cargar un JSON completo
-   * Crea un único elemento de patrimonio con los datos proporcionados
-   */
-  const prepareTestItem = () => {
-    setHeritageItems([
-      {
-        id: "test-item",
-        name: "Prueba personalizada",
-        description: {
-          local: { short: testText, extended: testText },
-        },
-        imageUrl: testImageUrl || DEFAULT_IMAGE_URL,
-      },
-    ]);
-    setCurrentItemIndex(0);
-  };
-
-  /**
-   * Efecto para traducir el texto de descripción al idioma seleccionado
-   * Se ejecuta cuando cambia el elemento actual, la longitud de descripción o el idioma objetivo
-   * Utiliza la función translate para obtener la traducción asíncrona
-   */
   useEffect(() => {
-    const fetchTranslation = async () => {
-      const text = currentItem.description.local[descriptionLength];
-      if (text) {
-        try {
-          const translatedText = await translate(text, targetLanguage);
-          setDisplayText(translatedText);
-        } catch (error) {
-          console.error("Error en traducción:", error);
-          setDisplayText(text);
-        }
-      }
-    };
-
     fetchTranslation();
   }, [currentItem, descriptionLength, targetLanguage]);
 
   /**
-   * Función para iniciar la reproducción del texto a voz
-   * Verifica que haya texto válido antes de iniciar la reproducción
-   * Muestra una alerta si no hay contenido para reproducir
+   * Inicia la reproducción de texto si hay contenido disponible.
    */
   const handlePlay = () => {
-    if (!displayText.trim() || displayText.includes("JSON válido")) {
+    if (!displayText.trim()) {
       alert("No hay contenido para reproducir");
       return;
     }
-
     startTTS();
   };
 
   /**
-   * Función para detener la reproducción actual
-   * Limpia temporizadores y resetea el estado de carga
+   * Detiene la reproducción de voz y cancela el temporizador de subtítulos.
    */
   const handleStop = () => {
     stopTTS();
     setIsLoadingNext(false);
-
     if (sentenceTimerRef.current) {
       clearTimeout(sentenceTimerRef.current);
     }
   };
 
   /**
-   * Función para navegar al elemento patrimonial anterior
-   * Implementa un comportamiento circular (vuelve al último cuando está en el primero)
+   * Navega al patrimonio anterior, en modo cíclico.
    */
   const handlePrev = () => {
+    handleStop(); // Detener la reproducción actual
+    setIsLoadingNext(true); // Activar loading
     setCurrentItemIndex((prev) =>
       prev > 0 ? prev - 1 : heritageItems.length - 1
     );
   };
 
   /**
-   * Función para navegar al siguiente elemento patrimonial
-   * Implementa un comportamiento circular (vuelve al primero cuando está en el último)
+   * Navega al siguiente patrimonio, en modo cíclico.
    */
   const handleNext = () => {
+    handleStop(); // Detener la reproducción actual
+    setIsLoadingNext(true); // Activar loading
     setCurrentItemIndex((prev) =>
       prev < heritageItems.length - 1 ? prev + 1 : 0
     );
   };
-
   /**
-   * Efecto de limpieza al desmontar el componente
-   * Asegura que se cancelen todos los temporizadores pendientes
+   * Limpieza al desmontar el componente: cancela el temporizador.
    */
   useEffect(() => {
     return () => {
@@ -249,9 +222,7 @@ export const TextToVideo = () => {
   }, []);
 
   /**
-   * Efecto para dividir el texto en oraciones para los subtítulos
-   * Separa el texto por signos de puntuación y filtra oraciones vacías
-   * Se ejecuta cada vez que cambia el texto a mostrar
+   * Divide el texto traducido en oraciones para el subtitulado dinámico.
    */
   useEffect(() => {
     if (displayText) {
@@ -259,16 +230,13 @@ export const TextToVideo = () => {
         .split(/(?<=[.!?])\s+/g)
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
-
       setSentences(newSentences);
       setCurrentSentenceIndex(0);
     }
   }, [displayText]);
 
   /**
-   * Efecto para controlar la transición entre oraciones en los subtítulos
-   * Calcula la duración de cada oración basada en su longitud
-   * Avanza automáticamente a la siguiente oración mientras se reproduce el audio
+   * Controla el avance automático de subtítulos mientras se reproduce audio.
    */
   useEffect(() => {
     if (!isPlaying || sentences.length === 0) return;
@@ -276,6 +244,8 @@ export const TextToVideo = () => {
     if (sentenceTimerRef.current) clearTimeout(sentenceTimerRef.current);
 
     const currentSentence = sentences[currentSentenceIndex];
+    // Calcula duración en función de la longitud
+    // si hay algun problema con la duracion de los subtitulos hay que ir aqui!!
     const duration = 1500 + currentSentence.length * 50;
 
     sentenceTimerRef.current = setTimeout(() => {
@@ -285,32 +255,8 @@ export const TextToVideo = () => {
 
   return (
     <div style={styles.container}>
-      <h2 style={styles.title}>Simulador de Patrimonio Cultural</h2>
-
+      {/* Botón de auto avance */}
       <div style={styles.controlsRow}>
-        <select
-          value={descriptionLength}
-          onChange={(e) =>
-            setDescriptionLength(e.target.value as "short" | "extended")
-          }
-          style={styles.select}
-        >
-          <option value="short">Descripción Corta</option>
-          <option value="extended">Descripción Extendida</option>
-        </select>
-
-        <select
-          value={targetLanguage}
-          onChange={(e) =>
-            setTargetLanguage(e.target.value as "fr" | "en" | "es")
-          }
-          style={styles.select}
-        >
-          <option value="fr">Francés</option>
-          <option value="en">Inglés</option>
-          <option value="es">Español</option>
-        </select>
-
         <button
           onClick={() => setAutoAdvance(!autoAdvance)}
           style={{
@@ -322,57 +268,7 @@ export const TextToVideo = () => {
         </button>
       </div>
 
-      <div style={styles.section}>
-        <h3>Cargar datos de patrimonio (JSON)</h3>
-        <textarea
-          value={jsonInput}
-          onChange={(e) => setJsonInput(e.target.value)}
-          placeholder="Pega aquí el JSON con los datos de patrimonio..."
-          style={styles.textarea}
-        />
-
-        {jsonError && <div style={styles.error}>{jsonError}</div>}
-
-        <button onClick={loadHeritageFromJson} style={styles.buttonPrimary}>
-          Cargar JSON
-        </button>
-
-        {heritageItems.length > 0 && (
-          <div style={styles.infoBox}>
-            <strong>{heritageItems.length}</strong> patrimonios cargados
-          </div>
-        )}
-      </div>
-
-      <div style={styles.section}>
-        <h3>Pruebas rápidas</h3>
-        <div>
-          <input
-            type="text"
-            value={testText}
-            onChange={(e) => setTestText(e.target.value)}
-            placeholder="Texto para probar"
-            style={styles.input}
-          />
-          <input
-            type="text"
-            value={testImageUrl}
-            onChange={(e) => setTestImageUrl(e.target.value)}
-            placeholder="URL de imagen (opcional)"
-            style={styles.input}
-          />
-          <button
-            onClick={() => {
-              prepareTestItem();
-              setTimeout(handlePlay, 100);
-            }}
-            style={styles.buttonSuccess}
-          >
-            Probar
-          </button>
-        </div>
-      </div>
-
+      {/* Navegación entre patrimonios */}
       <div style={styles.navigation}>
         <button
           onClick={handlePrev}
@@ -399,6 +295,7 @@ export const TextToVideo = () => {
         </button>
       </div>
 
+      {/* Visualización principal */}
       <div style={styles.viewer}>
         <img
           src={currentItem.imageUrl || DEFAULT_IMAGE_URL}
@@ -410,6 +307,7 @@ export const TextToVideo = () => {
           onError={(e) => (e.currentTarget.src = DEFAULT_IMAGE_URL)}
         />
 
+        {/* Avatar PNG Tuber + subtítulos */}
         {isPlaying && (
           <>
             <img
@@ -417,7 +315,9 @@ export const TextToVideo = () => {
               alt="Avatar"
               style={{
                 ...styles.avatar,
-                transform: `scale(${progress % 10 < 5 ? 1 : 1.05})`,
+                // Para los webpm gif animados usad 4 : 4.05
+                // si quereis usar otra imagen 1 : 1.05 por lo menos en mis pruebas
+                transform: `scale(${progress % 10 < 5 ? 4 : 4.05})`,
               }}
             />
             <div style={styles.caption}>
@@ -426,6 +326,7 @@ export const TextToVideo = () => {
           </>
         )}
 
+        {/* Cargando siguiente patrimonio */}
         {isLoadingNext && (
           <div style={styles.loadingOverlay}>
             <div style={styles.loadingSpinner}></div>
@@ -433,11 +334,13 @@ export const TextToVideo = () => {
           </div>
         )}
 
+        {/* Barra de progreso */}
         <div style={styles.progressBar}>
           <div style={{ ...styles.progressFill, width: `${progress}%` }} />
         </div>
       </div>
 
+      {/* Controles de reproducción */}
       <div style={styles.playbackControls}>
         {!isPlaying ? (
           <button
@@ -463,6 +366,9 @@ export const TextToVideo = () => {
   );
 };
 
+/**
+ * Estilos en línea para el layout, botones, subtítulos y reproductor.
+ */
 const styles = {
   container: {
     display: "flex",
@@ -473,17 +379,10 @@ const styles = {
     minHeight: "100vh",
     fontFamily: "Arial, sans-serif",
   },
-  title: {
-    marginBottom: "30px",
-  },
   controlsRow: {
     display: "flex",
     gap: "10px",
     marginBottom: "20px",
-  },
-  select: {
-    padding: "10px",
-    width: "150px",
   },
   autoAdvanceButton: {
     padding: "10px 15px",
@@ -492,46 +391,6 @@ const styles = {
     borderRadius: "4px",
     cursor: "pointer",
     fontWeight: "bold",
-  },
-  section: {
-    width: "100%",
-    maxWidth: "800px",
-    marginBottom: "20px",
-  },
-  textarea: {
-    width: "100%",
-    height: "200px",
-    padding: "10px",
-    fontFamily: "monospace",
-    marginBottom: "10px",
-  },
-  input: {
-    width: "100%",
-    padding: "10px",
-    marginBottom: "10px",
-  },
-  error: {
-    color: "red",
-    marginBottom: "10px",
-  },
-  buttonPrimary: {
-    padding: "10px 15px",
-    backgroundColor: "#4285f4",
-    color: "white",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-  },
-  buttonSuccess: {
-    padding: "10px 15px",
-    backgroundColor: "#34a853",
-    color: "white",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-  },
-  infoBox: {
-    marginTop: "15px",
   },
   navigation: {
     width: "100%",
