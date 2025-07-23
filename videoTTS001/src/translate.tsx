@@ -1,7 +1,5 @@
 // translate.tsx
-import React from "react";
-// si queremos traducir a mas idiomas
-// habra que cambiar esto
+
 type LanguageCode =
   | "es"
   | "en"
@@ -107,32 +105,3 @@ export async function translate(
     return texto; // Devuelve el texto original si hay error
   }
 }
-
-// Componente de ejemplo que usa la función de traducción
-interface TranslateComponentProps {
-  initialText: string;
-  targetLanguage: LanguageCode;
-}
-
-export const TranslateComponent: React.FC<TranslateComponentProps> = ({
-  initialText,
-  targetLanguage,
-}) => {
-  const [translatedText, setTranslatedText] = React.useState<string>("");
-  const [isLoading, setIsLoading] = React.useState<boolean>(false);
-
-  React.useEffect(() => {
-    const doTranslation = async () => {
-      setIsLoading(true);
-      const result = await translate(initialText, targetLanguage);
-      setTranslatedText(result);
-      setIsLoading(false);
-    };
-
-    doTranslation();
-  }, [initialText, targetLanguage]);
-
-  return (
-    <div>{isLoading ? <p>Traduciendo...</p> : <p>{translatedText}</p>}</div>
-  );
-};

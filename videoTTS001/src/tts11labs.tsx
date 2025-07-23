@@ -26,11 +26,11 @@ interface UseTTSResponse extends TTSPlayerState {
 // Opciones que recibe el hook
 interface TTSOptions {
   text: string;
-  lang?: "fr" | "en" | "es";
+  lang?: "fr" | "en" | "es" | string; // puedes poner todos los idiomas que te permita eleven labs
   onStop?: () => void;
   voiceId: string;
   apiKey: string;
-  model?: "standard" | "multilingual" | "enhanced";
+  model?: "standard" | "multilingual" | "enhanced"; // si no se especifica cae en multilingual. El mejor de los 3.
   stability?: number;
   similarityBoost?: number;
   autoAdvance?: boolean;

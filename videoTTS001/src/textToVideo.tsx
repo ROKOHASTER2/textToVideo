@@ -47,7 +47,7 @@ const DEFAULT_IMAGE_URL =
 interface TextToVideoProps {
   heritageItems: InputHeritageItem[];
   // si se quiere meter mas idiomas habra que cambiar
-  // este targetLanguage y el lang de tts11labs
+  // este targetLanguage
   targetLanguage: "fr" | "en" | "es";
   descriptionLength: "short" | "extended";
 }
@@ -79,7 +79,7 @@ export const TextToVideo = ({
   const [displayText, setDisplayText] = useState(""); // Texto traducido a mostrar/reproducir
   const [sentences, setSentences] = useState<string[]>([]); // Oraciones separadas para subtitulado dinámico
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0); // Oración actual en subtítulos
-  const [autoAdvance, setAutoAdvance] = useState(false); // Modo automático: pasa al siguiente patrimonio al terminar
+  const [autoAdvance, setAutoAdvance] = useState(true); // Modo automático: pasa al siguiente patrimonio al terminar
   const [isLoadingNext, setIsLoadingNext] = useState(false); // Indica si está cargando el siguiente patrimonio
 
   // Refs para mantener valores actualizados dentro de callbacks y evitar cierres sobre valores viejos
@@ -255,19 +255,6 @@ export const TextToVideo = ({
 
   return (
     <div style={styles.container}>
-      {/* Botón de auto avance */}
-      <div style={styles.controlsRow}>
-        <button
-          onClick={() => setAutoAdvance(!autoAdvance)}
-          style={{
-            ...styles.autoAdvanceButton,
-            backgroundColor: autoAdvance ? "#34a853" : "#ea4335",
-          }}
-        >
-          {autoAdvance ? "⏩ AUTO ON" : "⏩ AUTO OFF"}
-        </button>
-      </div>
-
       {/* Navegación entre patrimonios */}
       <div style={styles.navigation}>
         <button
@@ -383,14 +370,6 @@ const styles = {
     display: "flex",
     gap: "10px",
     marginBottom: "20px",
-  },
-  autoAdvanceButton: {
-    padding: "10px 15px",
-    color: "white",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-    fontWeight: "bold",
   },
   navigation: {
     width: "100%",
