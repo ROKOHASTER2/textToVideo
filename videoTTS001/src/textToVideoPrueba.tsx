@@ -44,6 +44,7 @@ export const TextToVideo = () => {
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
   const [autoAdvance, setAutoAdvance] = useState(false);
   const [isLoadingNext, setIsLoadingNext] = useState(false);
+  const [voiceId, setVoiceId] = useState("Nh2zY9kknu6z4pZy6FhD"); // Voz mujer por defecto
 
   const sentenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const autoAdvanceRef = useRef(autoAdvance);
@@ -99,7 +100,7 @@ export const TextToVideo = () => {
         setCurrentItemIndex(nextIndex);
       }
     },
-    voiceId: "21m00Tcm4TlvDq8ikWAM",
+    voiceId: voiceId,
     apiKey: "sk_b79f1163753aac8d1e5f160f1a378a5ecafa59715d38511a",
   });
 
@@ -311,6 +312,16 @@ export const TextToVideo = () => {
           <option value="es">Español</option>
         </select>
 
+        <select
+          value={voiceId}
+          onChange={(e) => setVoiceId(e.target.value)}
+          style={styles.select}
+        >
+          <option value="21m00Tcm4TlvDq8ikWAM">Voz Mujer</option>
+          <option value="iLzHtPh0bW6RGWRG0Xo5">Voz Hombre</option>
+          <option value="Nh2zY9kknu6z4pZy6FhD">Voz Hombre Joven</option>
+        </select>
+
         <button
           onClick={() => setAutoAdvance(!autoAdvance)}
           style={{
@@ -417,7 +428,7 @@ export const TextToVideo = () => {
               alt="Avatar"
               style={{
                 ...styles.avatar,
-                transform: `scale(${progress % 10 < 5 ? 1 : 1.05})`,
+                transform: `scale(${progress % 10 < 5 ? 4 : 4.05})`,
               }}
             />
             <div style={styles.caption}>
@@ -480,10 +491,13 @@ const styles = {
     display: "flex",
     gap: "10px",
     marginBottom: "20px",
+    flexWrap: "wrap" as const,
+    justifyContent: "center",
   },
   select: {
     padding: "10px",
-    width: "150px",
+    width: "200px",
+    marginBottom: "10px",
   },
   autoAdvanceButton: {
     padding: "10px 15px",
@@ -492,11 +506,16 @@ const styles = {
     borderRadius: "4px",
     cursor: "pointer",
     fontWeight: "bold",
+    marginBottom: "10px",
   },
   section: {
     width: "100%",
     maxWidth: "800px",
     marginBottom: "20px",
+    backgroundColor: "white",
+    padding: "20px",
+    borderRadius: "8px",
+    boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
   },
   textarea: {
     width: "100%",
@@ -504,11 +523,15 @@ const styles = {
     padding: "10px",
     fontFamily: "monospace",
     marginBottom: "10px",
+    border: "1px solid #ddd",
+    borderRadius: "4px",
   },
   input: {
     width: "100%",
     padding: "10px",
     marginBottom: "10px",
+    border: "1px solid #ddd",
+    borderRadius: "4px",
   },
   error: {
     color: "red",
@@ -521,6 +544,7 @@ const styles = {
     border: "none",
     borderRadius: "4px",
     cursor: "pointer",
+    marginRight: "10px",
   },
   buttonSuccess: {
     padding: "10px 15px",
@@ -532,6 +556,10 @@ const styles = {
   },
   infoBox: {
     marginTop: "15px",
+    padding: "10px",
+    backgroundColor: "#f8f9fa",
+    borderRadius: "4px",
+    borderLeft: "4px solid #4285f4",
   },
   navigation: {
     width: "100%",
@@ -547,11 +575,19 @@ const styles = {
     backgroundColor: "transparent",
     border: "none",
     cursor: "pointer",
+    borderRadius: "50%",
+    width: "50px",
+    height: "50px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    transition: "background-color 0.3s",
   },
   itemCounter: {
     padding: "5px 10px",
     backgroundColor: "#f0f0f0",
     borderRadius: "4px",
+    fontWeight: "bold",
   },
   viewer: {
     width: "500px",
@@ -633,6 +669,7 @@ const styles = {
   playbackControls: {
     display: "flex",
     gap: "10px",
+    marginBottom: "20px",
   },
   playButton: {
     padding: "12px 24px",
@@ -642,6 +679,7 @@ const styles = {
     fontSize: "16px",
     fontWeight: "bold",
     cursor: "pointer",
+    transition: "background-color 0.3s",
   },
   stopButton: {
     padding: "12px 24px",
@@ -652,5 +690,6 @@ const styles = {
     fontSize: "16px",
     fontWeight: "bold",
     cursor: "pointer",
+    transition: "background-color 0.3s",
   },
 };
